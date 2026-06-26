@@ -40,7 +40,7 @@ export function SettleScreen() {
   }
 
   return (
-    <div className="px-5 pb-28 pt-6">
+    <div className="px-5 pb-6 pt-4">
       <h1 className="font-heading text-2xl font-bold text-ink">
         Settle up
       </h1>

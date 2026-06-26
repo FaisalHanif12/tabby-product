@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -18,7 +18,7 @@ import {
 import { ReceiptCard, ReceiptLine } from './receipt-card'
 import { MemberRoster, Avatar } from './member-avatars'
 
-export function ClaimScreen({ onSettle }: { onSettle: () => void }) {
+export function ClaimScreen() {
   const [items, setItems] = useState<LineItem[]>(INITIAL_ITEMS)
 
   const subtotal = useMemo(() => subtotalOf(items), [items])
@@ -32,6 +32,15 @@ export function ClaimScreen({ onSettle }: { onSettle: () => void }) {
     [items],
   )
   const yourCount = items.filter((i) => i.claimedBy.includes('you')).length
+
+  // Keep the lifted ClaimFooter in sync via a custom event
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('tabby:claim-summary', {
+        detail: { count: yourCount, total: yourItemsTotal },
+      }),
+    )
+  }, [yourCount, yourItemsTotal])
 
   function toggleClaim(id: string) {
     setItems((prev) =>
@@ -49,8 +58,8 @@ export function ClaimScreen({ onSettle }: { onSettle: () => void }) {
   }
 
   return (
-    <div className="pb-32">
-      <div className="px-5 pt-6">
+    <div>
+      <div className="px-5 pt-4">
         <h1 className="font-heading text-2xl font-bold text-ink">
           Tap what you had
         </h1>
@@ -145,28 +154,8 @@ export function ClaimScreen({ onSettle }: { onSettle: () => void }) {
         </ReceiptCard>
       </div>
 
-      {/* Sticky bottom bar */}
-      <div className="fixed inset-x-0 bottom-0 z-20">
-        <div className="mx-auto max-w-md px-4 pb-5">
-          <div className="flex items-center justify-between gap-4 rounded-2xl bg-ink/95 px-5 py-3.5 shadow-[0_-8px_30px_-10px_rgba(0,0,0,0.5)] backdrop-blur">
-            <div className="flex flex-col">
-              <span className="text-xs text-receipt/60">
-                Your items{yourCount ? ` · ${yourCount}` : ''}
-              </span>
-              <span className="font-mono text-xl font-semibold tabular-nums text-receipt">
-                {formatMoney(yourItemsTotal)}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={onSettle}
-              className="rounded-full bg-tangerine px-7 py-3 font-semibold text-ink transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
-            >
-              Settle up
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* bottom spacer so the last item isn't flush against the footer */}
+      <div className="h-3" />
     </div>
   )
 }

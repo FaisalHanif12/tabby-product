@@ -53,7 +53,7 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
 
   if (!scanned) {
     return (
-      <div className="px-5 pb-28 pt-6">
+      <div className="px-5 pb-6 pt-4">
         <h1 className="font-heading text-2xl font-bold text-ink">
           New split
         </h1>
@@ -79,7 +79,7 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
   }
 
   return (
-    <div className="px-4 pb-28 pt-6">
+    <div className="px-4 pb-6 pt-4">
       <div className="px-1">
         <h1 className="font-heading text-2xl font-bold text-ink">
           Check the details
