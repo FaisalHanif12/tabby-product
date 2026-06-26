@@ -54,23 +54,23 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
   if (!scanned) {
     return (
       <div className="px-5 pb-28 pt-6">
-        <h1 className="font-heading text-2xl font-bold text-receipt">
+        <h1 className="font-heading text-2xl font-bold text-ink">
           New split
         </h1>
-        <p className="mt-1 text-sm text-receipt/70">
+        <p className="mt-1 text-sm text-muted-ink">
           Start by snapping the receipt — we&apos;ll pull out the items.
         </p>
 
         <button
           type="button"
           onClick={handleScan}
-          className="mt-8 flex w-full flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed border-receipt/40 bg-receipt/5 px-6 py-16 text-receipt transition-colors hover:border-tangerine hover:bg-receipt/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine"
+          className="mt-8 flex w-full flex-col items-center justify-center gap-4 rounded-3xl border-2 border-dashed border-leader bg-receipt px-6 py-16 text-ink shadow-[0_16px_40px_-24px_rgba(11,83,65,0.28)] transition-colors hover:border-tangerine hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine"
         >
           <span className="flex h-16 w-16 items-center justify-center rounded-full bg-tangerine text-ink">
             <Camera className="h-7 w-7" strokeWidth={2.2} />
           </span>
           <span className="text-lg font-semibold">Snap a receipt</span>
-          <span className="text-sm text-receipt/60">
+          <span className="text-sm text-muted-ink">
             Tap to use your camera or upload a photo
           </span>
         </button>
@@ -81,10 +81,10 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
   return (
     <div className="px-4 pb-28 pt-6">
       <div className="px-1">
-        <h1 className="font-heading text-2xl font-bold text-receipt">
+        <h1 className="font-heading text-2xl font-bold text-ink">
           Check the details
         </h1>
-        <p className="mt-1 text-sm text-receipt/70">
+        <p className="mt-1 text-sm text-muted-ink">
           Fix anything that looks off, then start splitting.
         </p>
       </div>
@@ -161,7 +161,7 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
           <button
             type="button"
             onClick={onStart}
-            className="w-full rounded-full bg-tangerine px-7 py-4 text-base font-semibold text-ink transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-spruce"
+            className="w-full rounded-full bg-tangerine px-7 py-4 text-base font-semibold text-ink shadow-[0_12px_28px_-12px_rgba(255,138,43,0.7)] transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             Start splitting
           </button>

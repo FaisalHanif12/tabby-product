@@ -55,7 +55,7 @@ export function MemberRoster({
           >
             {m.initials}
           </span>
-          <span className="text-[11px] font-medium text-receipt/80">
+          <span className="text-[11px] font-medium text-muted-ink">
             {m.name}
           </span>
         </li>

@@ -20,14 +20,16 @@ export function TabbyApp() {
   const [screen, setScreen] = useState<Screen>('claim')
 
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-md">
-      <header className="flex items-center justify-between px-5 pt-6">
-        <Wordmark className="text-xl text-receipt" />
-        <span className="font-mono text-xs text-receipt/60">4 people</span>
+    <main className="mx-auto min-h-dvh w-full max-w-md bg-canvas">
+      <header className="rounded-b-[28px] bg-spruce px-5 pt-6 pb-10">
+        <div className="flex items-center justify-between">
+          <Wordmark className="text-xl text-receipt" />
+          <span className="font-mono text-xs text-receipt/70">4 people</span>
+        </div>
       </header>
 
-      <nav className="sticky top-0 z-30 px-4 pt-3 pb-2">
-        <div className="flex gap-1 rounded-full bg-spruce-dark/60 p-1 backdrop-blur">
+      <nav className="relative z-10 -mt-6 px-4">
+        <div className="flex gap-1 rounded-full border border-hairline bg-receipt p-1 shadow-[0_12px_30px_-14px_rgba(11,83,65,0.4)]">
           {TABS.map((tab) => {
             const active = screen === tab.id
             const Icon = tab.icon
@@ -40,8 +42,8 @@ export function TabbyApp() {
                 className={cn(
                   'flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
                   active
-                    ? 'bg-receipt text-ink'
-                    : 'text-receipt/70 hover:text-receipt',
+                    ? 'bg-spruce text-receipt'
+                    : 'text-muted-ink hover:text-ink',
                 )}
               >
                 <Icon className="h-4 w-4" />

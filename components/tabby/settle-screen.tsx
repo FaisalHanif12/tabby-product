@@ -41,15 +41,15 @@ export function SettleScreen() {
 
   return (
     <div className="px-5 pb-28 pt-6">
-      <h1 className="font-heading text-2xl font-bold text-receipt">
+      <h1 className="font-heading text-2xl font-bold text-ink">
         Settle up
       </h1>
-      <p className="mt-1 text-sm text-receipt/70">
+      <p className="mt-1 text-sm text-muted-ink">
         You covered {MERCHANT.name}. Here&apos;s who owes you.
       </p>
 
-      <div className="mt-5 rounded-2xl bg-receipt/10 px-5 py-4">
-        <span className="text-xs text-receipt/60">Still owed to you</span>
+      <div className="mt-5 rounded-2xl bg-spruce px-5 py-4 shadow-[0_16px_40px_-22px_rgba(11,83,65,0.55)]">
+        <span className="text-xs text-receipt/70">Still owed to you</span>
         <div className="font-mono text-3xl font-bold tabular-nums text-receipt">
           {formatMoney(outstanding)}
         </div>
@@ -59,7 +59,7 @@ export function SettleScreen() {
         {rows.map((row) => (
           <li
             key={row.member.id}
-            className="flex items-center gap-3 rounded-2xl bg-receipt px-4 py-3.5 shadow-[0_10px_24px_-14px_rgba(0,0,0,0.4)]"
+            className="flex items-center gap-3 rounded-2xl border border-hairline bg-receipt px-4 py-3.5 shadow-[0_12px_28px_-20px_rgba(11,83,65,0.35)]"
           >
             <span
               style={{ backgroundColor: row.member.color }}
@@ -108,7 +108,7 @@ export function SettleScreen() {
         type="button"
         onClick={copySummary}
         className={cn(
-          'mt-6 flex w-full items-center justify-center gap-2 rounded-full border-2 border-receipt/30 px-5 py-3.5 font-semibold text-receipt transition-colors hover:bg-receipt/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
+          'mt-6 flex w-full items-center justify-center gap-2 rounded-full border border-hairline bg-receipt px-5 py-3.5 font-semibold text-ink shadow-[0_10px_24px_-18px_rgba(11,83,65,0.4)] transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
         )}
       >
         {copied ? (

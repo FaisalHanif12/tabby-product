@@ -51,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`light ${geistSans.variable} ${geistMono.variable} ${bricolage.variable} bg-spruce`}
+      className={`light ${geistSans.variable} ${geistMono.variable} ${bricolage.variable} bg-canvas`}
     >
       <body className="font-sans antialiased">
         {children}

@@ -16,7 +16,7 @@ export function ReceiptCard({
   return (
     <div
       className={cn(
-        'receipt-perforated bg-receipt text-ink shadow-[0_18px_40px_-12px_rgba(0,0,0,0.45)]',
+        'receipt-perforated border border-hairline bg-receipt text-ink shadow-[0_16px_40px_-20px_rgba(11,83,65,0.28)]',
         className,
       )}
     >

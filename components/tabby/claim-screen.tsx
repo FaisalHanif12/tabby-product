@@ -51,10 +51,10 @@ export function ClaimScreen({ onSettle }: { onSettle: () => void }) {
   return (
     <div className="pb-32">
       <div className="px-5 pt-6">
-        <h1 className="font-heading text-2xl font-bold text-receipt">
+        <h1 className="font-heading text-2xl font-bold text-ink">
           Tap what you had
         </h1>
-        <p className="mt-1 text-sm text-receipt/70">
+        <p className="mt-1 text-sm text-muted-ink">
           Claim your items — share a dish by tapping it together.
         </p>
         <div className="mt-5 flex justify-center">

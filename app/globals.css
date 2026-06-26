@@ -10,6 +10,8 @@
   --font-mono: var(--font-geist-mono), 'Geist Mono Fallback';
 
   /* Tabby palette */
+  --color-canvas: #f5f6f4;
+  --color-hairline: #ebeae4;
   --color-spruce: #0b5341;
   --color-spruce-dark: #073c2e;
   --color-tangerine: #ff8a2b;
@@ -68,7 +70,7 @@
 
 :root {
   color-scheme: light;
-  --background: #0b5341;
+  --background: #f5f6f4;
   --foreground: #16140f;
   --card: #ffffff;
   --card-foreground: #16140f;
@@ -76,15 +78,15 @@
   --popover-foreground: #16140f;
   --primary: #ff8a2b;
   --primary-foreground: #16140f;
-  --secondary: #f5f1e8;
+  --secondary: #eef0ec;
   --secondary-foreground: #16140f;
-  --muted: #f5f1e8;
+  --muted: #eef0ec;
   --muted-foreground: #6b6356;
   --accent: #6fe0ac;
   --accent-foreground: #16140f;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: #dad3c4;
-  --input: #dad3c4;
+  --border: #ebeae4;
+  --input: #ebeae4;
   --ring: #ff8a2b;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
@@ -179,16 +181,8 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply text-foreground font-sans;
+    @apply bg-canvas text-foreground font-sans;
     min-height: 100dvh;
-    background-color: #0b5341;
-    background-image: radial-gradient(
-      130% 100% at 50% 0%,
-      #0b5341 0%,
-      #0a4d3c 45%,
-      #073c2e 100%
-    );
-    background-attachment: fixed;
   }
   html {
     @apply font-sans;
@@ -198,7 +192,7 @@
 /* ── Tabby signature receipt styling ───────────────────────── */
 
 /* Perforated (scalloped) top + bottom edges of the receipt card.
-   Green half-circles punch into the white card so the canvas shows through. */
+   Off-white half-circles punch into the white card so the page shows through. */
 .receipt-perforated {
   position: relative;
 }
@@ -211,12 +205,13 @@
   height: 14px;
   background-image: radial-gradient(
     circle at 10px 0,
-    var(--scallop, #0a4a39) 7px,
+    var(--scallop, #f5f6f4) 7px,
     transparent 8px
   );
   background-size: 20px 14px;
   background-repeat: repeat-x;
   pointer-events: none;
+  z-index: 1;
 }
 .receipt-perforated::before {
   top: 0;
