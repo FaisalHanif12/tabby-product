@@ -20,7 +20,7 @@ export function TabbyApp() {
   const [screen, setScreen] = useState<Screen>('claim')
 
   return (
-    <main className="min-h-screen w-full max-w-[430px] bg-canvas shadow-[0_0_60px_-20px_rgba(11,83,65,0.25)]">
+    <main className="min-h-screen w-full bg-canvas sm:min-h-[calc(100vh-48px)] sm:max-w-[430px] sm:overflow-hidden sm:rounded-[28px] sm:border sm:border-[rgba(8,40,30,0.06)] sm:shadow-[0_20px_50px_-12px_rgba(8,40,30,0.28)]">
       <header className="rounded-b-[28px] bg-spruce px-5 pt-6 pb-10">
         <div className="flex items-center justify-between">
           <Wordmark className="text-xl text-receipt" />
