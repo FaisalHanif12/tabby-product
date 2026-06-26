@@ -180,12 +180,15 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-canvas text-foreground font-sans;
-    min-height: 100dvh;
-  }
   html {
     @apply font-sans;
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-canvas text-foreground font-sans;
+    height: 100%;
+    overflow: hidden;
   }
 }
 
@@ -260,6 +263,97 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Bottom sheet slide-up + backdrop fade */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Receipt scanning: tangerine line sweeping top → bottom */
+@keyframes scan-sweep {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-tangerine),
+    transparent
+  );
+  box-shadow: 0 0 16px 2px rgba(255, 138, 43, 0.6);
+  animation: scan-sweep 1.6s ease-in-out infinite;
+}
+
+/* Thermal-print shimmer for parsed rows */
+@keyframes shimmer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.shimmer-row {
+  animation: shimmer-in 0.5s ease both;
+}
+
+/* Soft celebratory pulse for the all-settled checkmark */
+@keyframes ping-soft {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.ping-soft {
+  animation: ping-soft 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-line {
+    animation: none;
+    top: 50%;
+  }
+  .ping-soft {
+    animation: none;
+    display: none;
   }
 }
 

@@ -30,6 +30,15 @@ export const MERCHANT = {
   date: 'Sat, Jun 21 · 8:24 PM',
 }
 
+/** The person who started the split (the host). */
+export const HOST_NAME = 'Faisal'
+
+/** Mock share link surfaced in the invite sheet / join screen. */
+export const SHARE_LINK = 'tabby.split/el-camino-9fk2'
+
+/** People who have already joined the session (shown in the invite sheet). */
+export const JOINED_MEMBERS: Member[] = [MEMBER_MAP.maya, MEMBER_MAP.theo]
+
 /** Initial claim-screen items. "Guac & Chips" starts shared by Maya & Theo. */
 export const INITIAL_ITEMS: LineItem[] = [
   { id: 'i1', label: 'Carne Asada Burrito', price: 12.5, claimedBy: [] },

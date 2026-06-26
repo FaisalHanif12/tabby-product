@@ -10,13 +10,15 @@ import {
   type SettleRow,
 } from '@/lib/tabby-data'
 
-export function SettleScreen() {
+export function SettleScreen({ onNewSplit }: { onNewSplit: () => void }) {
   const [rows, setRows] = useState<SettleRow[]>(INITIAL_SETTLE)
   const [copied, setCopied] = useState(false)
 
   const outstanding = rows
     .filter((r) => !r.paid)
     .reduce((s, r) => s + r.amount, 0)
+
+  const allSettled = rows.length > 0 && rows.every((r) => r.paid)
 
   function markPaid(id: string) {
     setRows((prev) =>
@@ -39,8 +41,38 @@ export function SettleScreen() {
     setTimeout(() => setCopied(false), 1800)
   }
 
+  if (allSettled) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center px-6 pb-8 pt-10 text-center">
+        <div className="relative flex h-28 w-28 items-center justify-center">
+          <span className="ping-soft absolute inset-0 rounded-full bg-mint" />
+          <span className="relative flex h-24 w-24 items-center justify-center rounded-full bg-mint shadow-[0_18px_40px_-16px_rgba(111,224,172,0.9)]">
+            <Check className="h-12 w-12 text-ink" strokeWidth={3} />
+          </span>
+        </div>
+
+        <h1 className="mt-7 font-heading text-3xl font-extrabold tracking-tight text-ink">
+          All settled up!
+        </h1>
+        <p className="mt-2 text-pretty text-base leading-relaxed text-muted-ink">
+          Everyone&apos;s paid up for{' '}
+          <span className="font-semibold text-ink">{MERCHANT.name}</span>.
+          Nice work.
+        </p>
+
+        <button
+          type="button"
+          onClick={onNewSplit}
+          className="mt-8 w-full rounded-full bg-tangerine px-7 py-4 text-base font-semibold text-ink shadow-[0_14px_30px_-12px_rgba(255,138,43,0.7)] transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
+        >
+          Start a new split
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="px-5 pb-28 pt-6">
+    <div className="px-5 pb-6 pt-4">
       <h1 className="font-heading text-2xl font-bold text-ink">
         Settle up
       </h1>
