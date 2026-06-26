@@ -5,9 +5,27 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-bricolage), 'Geist Fallback';
   --font-sans: var(--font-geist-sans), 'Geist Fallback';
   --font-mono: var(--font-geist-mono), 'Geist Mono Fallback';
+
+  /* Tabby palette */
+  --color-spruce: #0b5341;
+  --color-spruce-dark: #073c2e;
+  --color-tangerine: #ff8a2b;
+  --color-mint: #6fe0ac;
+  --color-ink: #16140f;
+  --color-muted-ink: #6b6356;
+  --color-leader: #dad3c4;
+  --color-receipt: #ffffff;
+
+  /* Avatar accents */
+  --color-avatar-teal: #2bb6a3;
+  --color-avatar-clay: #e2725b;
+  --color-avatar-gold: #e0a92b;
+
+  --animate-pop: pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-rise: rise 0.4s ease both;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -50,30 +68,30 @@
 
 :root {
   color-scheme: light;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: #0b5341;
+  --foreground: #16140f;
+  --card: #ffffff;
+  --card-foreground: #16140f;
+  --popover: #ffffff;
+  --popover-foreground: #16140f;
+  --primary: #ff8a2b;
+  --primary-foreground: #16140f;
+  --secondary: #f5f1e8;
+  --secondary-foreground: #16140f;
+  --muted: #f5f1e8;
+  --muted-foreground: #6b6356;
+  --accent: #6fe0ac;
+  --accent-foreground: #16140f;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: #dad3c4;
+  --input: #dad3c4;
+  --ring: #ff8a2b;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 1.125rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -161,9 +179,101 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground font-sans;
+    min-height: 100dvh;
+    background-color: #0b5341;
+    background-image: radial-gradient(
+      130% 100% at 50% 0%,
+      #0b5341 0%,
+      #0a4d3c 45%,
+      #073c2e 100%
+    );
+    background-attachment: fixed;
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ── Tabby signature receipt styling ───────────────────────── */
+
+/* Perforated (scalloped) top + bottom edges of the receipt card.
+   Green half-circles punch into the white card so the canvas shows through. */
+.receipt-perforated {
+  position: relative;
+}
+.receipt-perforated::before,
+.receipt-perforated::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14px;
+  background-image: radial-gradient(
+    circle at 10px 0,
+    var(--scallop, #0a4a39) 7px,
+    transparent 8px
+  );
+  background-size: 20px 14px;
+  background-repeat: repeat-x;
+  pointer-events: none;
+}
+.receipt-perforated::before {
+  top: 0;
+  transform: translateY(-1px);
+}
+.receipt-perforated::after {
+  bottom: 0;
+  transform: translateY(1px) rotate(180deg);
+}
+
+/* Dotted leader line connecting a label to its price */
+.leader {
+  flex: 1;
+  margin: 0 0.5rem;
+  border-bottom: 2px dotted var(--color-leader);
+  transform: translateY(-0.28em);
+  min-width: 1rem;
+}
+
+/* Dashed tear line above the totals block */
+.tear-line {
+  border: none;
+  border-top: 2px dashed var(--color-leader);
+  position: relative;
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }
