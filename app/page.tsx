@@ -1,16 +1,15 @@
+import { TabbyApp } from '@/components/tabby/tabby-app'
+
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center font-sans">
-      <main className="flex w-full max-w-3xl flex-col items-center gap-8 px-6 py-16 text-center sm:items-start sm:text-left">
-        <div className="flex flex-col gap-4">
-          <h1 className="text-4xl font-bold tracking-tight">
-            Tabby Product
-          </h1>
-          <p className="max-w-md text-lg text-muted-foreground">
-            To get started, send a prompt or modify this page directly.
-          </p>
-        </div>
-      </main>
+    <div
+      className="min-h-screen sm:flex sm:items-start sm:justify-center sm:px-0 sm:py-6"
+      style={{
+        background:
+          'linear-gradient(to bottom, #EEF2EF 0%, #E7EDE9 100%)',
+      }}
+    >
+      <TabbyApp />
     </div>
-  );
+  )
 }
