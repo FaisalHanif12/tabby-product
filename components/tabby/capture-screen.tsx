@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Camera, Plus, Trash2 } from 'lucide-react'
 import {
+  MERCHANT,
   PARSED_ITEMS,
   TAX_RATE,
   TIP_RATE,
@@ -13,23 +14,34 @@ import { ReceiptCard } from './receipt-card'
 type EditItem = { id: string; label: string; price: string }
 
 export function CaptureScreen({ onStart }: { onStart: () => void }) {
+  const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [items, setItems] = useState<EditItem[]>([])
   const [tax, setTax] = useState('0.00')
   const [tip, setTip] = useState('0.00')
 
   function handleScan() {
-    const parsed = PARSED_ITEMS.map((p) => ({
-      id: p.id,
-      label: p.label,
-      price: p.price.toFixed(2),
-    }))
-    const sub = PARSED_ITEMS.reduce((s, p) => s + p.price, 0)
-    setItems(parsed)
-    setTax((sub * TAX_RATE).toFixed(2))
-    setTip((sub * TIP_RATE).toFixed(2))
-    setScanned(true)
+    setScanning(true)
   }
+
+  // Mock OCR: after a short scan, populate the editable review.
+  useEffect(() => {
+    if (!scanning) return
+    const timer = setTimeout(() => {
+      const parsed = PARSED_ITEMS.map((p) => ({
+        id: p.id,
+        label: p.label,
+        price: p.price.toFixed(2),
+      }))
+      const sub = PARSED_ITEMS.reduce((s, p) => s + p.price, 0)
+      setItems(parsed)
+      setTax((sub * TAX_RATE).toFixed(2))
+      setTip((sub * TIP_RATE).toFixed(2))
+      setScanned(true)
+      setScanning(false)
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [scanning])
 
   function updateItem(id: string, field: 'label' | 'price', value: string) {
     setItems((prev) =>
@@ -50,6 +62,54 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
 
   const subtotal = items.reduce((s, it) => s + (Number(it.price) || 0), 0)
   const total = subtotal + (Number(tax) || 0) + (Number(tip) || 0)
+
+  if (scanning) {
+    return (
+      <div className="px-4 pb-6 pt-4">
+        <div className="px-1">
+          <h1 className="font-heading text-2xl font-bold text-ink">
+            Reading your receipt…
+          </h1>
+          <p className="mt-1 text-sm text-muted-ink">
+            Hang tight — we&apos;re pulling out the line items.
+          </p>
+        </div>
+
+        <div className="relative mt-6 overflow-hidden rounded-[20px]">
+          <ReceiptCard
+            merchant={MERCHANT.name}
+            date={MERCHANT.date}
+            className="mx-auto max-w-md rounded-[20px]"
+          >
+            <ul className="mt-6 flex flex-col gap-3">
+              {PARSED_ITEMS.map((item, i) => (
+                <li
+                  key={item.id}
+                  className="shimmer-row flex items-center justify-between gap-3"
+                  style={{ animationDelay: `${i * 0.18}s` }}
+                >
+                  <span className="font-medium text-ink">{item.label}</span>
+                  <span className="font-mono tabular-nums text-ink">
+                    {formatMoney(item.price)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </ReceiptCard>
+          {/* tangerine scan-line sweeping over the receipt */}
+          <span className="scan-line" aria-hidden="true" />
+        </div>
+
+        <p
+          className="mt-5 text-center text-sm font-medium text-muted-ink"
+          role="status"
+          aria-live="polite"
+        >
+          Reading your receipt…
+        </p>
+      </div>
+    )
+  }
 
   if (!scanned) {
     return (
