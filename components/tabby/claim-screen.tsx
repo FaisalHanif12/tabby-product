@@ -14,24 +14,76 @@ import {
   shareForMember,
   subtotalOf,
   type LineItem,
+  type Member,
 } from '@/lib/tabby-data'
+import type { SessionView } from '@/lib/types/tabby'
+import { setItemClaim } from '@/lib/api/tabby-client'
 import { ReceiptCard, ReceiptLine } from './receipt-card'
 import { MemberRoster, Avatar } from './member-avatars'
 
-export function ClaimScreen() {
-  const [items, setItems] = useState<LineItem[]>(INITIAL_ITEMS)
+export function ClaimScreen({
+  sessionId = null,
+  meId = null,
+  view = null,
+  onClaimed,
+}: {
+  sessionId?: string | null
+  meId?: string | null
+  view?: SessionView | null
+  onClaimed?: () => void
+} = {}) {
+  // Live mode requires a session that already has a persisted expense.
+  const live = Boolean(sessionId && view?.expense)
+
+  // Resolve the data source: live session view, or the local mock fixture.
+  const sourceItems: LineItem[] = useMemo(() => {
+    if (live && view) {
+      return view.items.map((it) => ({
+        id: it.id,
+        label: it.label,
+        price: it.price,
+        claimedBy: it.claimedBy,
+      }))
+    }
+    return INITIAL_ITEMS
+  }, [live, view])
+
+  const members: Member[] = live && view ? view.members : MEMBERS
+  const memberMap: Record<string, Member> = useMemo(() => {
+    if (live && view) {
+      return Object.fromEntries(view.members.map((m) => [m.id, m]))
+    }
+    return MEMBER_MAP
+  }, [live, view])
+
+  // "You" — the current member. Falls back to the mock 'you' id.
+  const selfId = live ? (meId ?? '') : 'you'
+
+  const tax = live && view?.expense ? view.expense.tax : 0
+  const tip = live && view?.expense ? view.expense.tip : 0
+  const usingRates = !live
+
+  const merchant = live && view?.expense?.merchant ? view.expense.merchant : MERCHANT.name
+  const merchantDate = live ? undefined : MERCHANT.date
+  const expenseId = view?.expense?.id ?? null
+
+  const [items, setItems] = useState<LineItem[]>(sourceItems)
+
+  // Reconcile local (optimistic) state with the latest polled data.
+  useEffect(() => {
+    setItems(sourceItems)
+  }, [sourceItems])
 
   const subtotal = useMemo(() => subtotalOf(items), [items])
-  const tax = subtotal * TAX_RATE
-  const tip = subtotal * TIP_RATE
-  const total = subtotal + tax + tip
+  const computedTax = usingRates ? subtotal * TAX_RATE : tax
+  const computedTip = usingRates ? subtotal * TIP_RATE : tip
+  const total = subtotal + computedTax + computedTip
 
   const yourItemsTotal = useMemo(
-    () =>
-      items.reduce((sum, item) => sum + shareForMember(item, 'you'), 0),
-    [items],
+    () => items.reduce((sum, item) => sum + shareForMember(item, selfId), 0),
+    [items, selfId],
   )
-  const yourCount = items.filter((i) => i.claimedBy.includes('you')).length
+  const yourCount = items.filter((i) => i.claimedBy.includes(selfId)).length
 
   // Keep the lifted ClaimFooter in sync via a custom event
   useEffect(() => {
@@ -43,18 +95,33 @@ export function ClaimScreen() {
   }, [yourCount, yourItemsTotal])
 
   function toggleClaim(id: string) {
+    const item = items.find((i) => i.id === id)
+    if (!item) return
+    const mine = item.claimedBy.includes(selfId)
+
+    // Optimistic update first.
     setItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item
-        const mine = item.claimedBy.includes('you')
+      prev.map((it) => {
+        if (it.id !== id) return it
         return {
-          ...item,
+          ...it,
           claimedBy: mine
-            ? item.claimedBy.filter((m) => m !== 'you')
-            : [...item.claimedBy, 'you'],
+            ? it.claimedBy.filter((m) => m !== selfId)
+            : [...it.claimedBy, selfId],
         }
       }),
     )
+
+    // Reconcile with the server when live; mock mode stays local-only.
+    if (live && sessionId && expenseId && selfId) {
+      void setItemClaim(
+        id,
+        { sessionId, expenseId, memberId: selfId },
+        !mine,
+      ).then((res) => {
+        if (res.ok) onClaimed?.()
+      })
+    }
   }
 
   return (
@@ -67,19 +134,19 @@ export function ClaimScreen() {
           Claim your items — share a dish by tapping it together.
         </p>
         <div className="mt-5 flex justify-center">
-          <MemberRoster members={MEMBERS} activeId="you" />
+          <MemberRoster members={members} activeId={selfId} />
         </div>
       </div>
 
       <div className="px-4 pt-6">
         <ReceiptCard
-          merchant={MERCHANT.name}
-          date={MERCHANT.date}
+          merchant={merchant}
+          date={merchantDate}
           className="mx-auto max-w-md rounded-[20px]"
         >
           <ul className="mt-6 flex flex-col">
             {items.map((item) => {
-              const mine = item.claimedBy.includes('you')
+              const mine = item.claimedBy.includes(selfId)
               const shared = item.claimedBy.length > 1
               return (
                 <li key={item.id}>
@@ -121,14 +188,16 @@ export function ClaimScreen() {
                             ÷{item.claimedBy.length}
                           </span>
                         )}
-                        {item.claimedBy.map((mid) => (
-                          <Avatar
-                            key={mid}
-                            member={MEMBER_MAP[mid]}
-                            size="sm"
-                            popKey={`${item.id}-${mid}`}
-                          />
-                        ))}
+                        {item.claimedBy.map((mid) =>
+                          memberMap[mid] ? (
+                            <Avatar
+                              key={mid}
+                              member={memberMap[mid]}
+                              size="sm"
+                              popKey={`${item.id}-${mid}`}
+                            />
+                          ) : null,
+                        )}
                       </span>
                     </span>
                   </button>
@@ -141,8 +210,11 @@ export function ClaimScreen() {
 
           <div className="flex flex-col gap-2">
             <ReceiptLine label="Subtotal" value={formatMoney(subtotal)} />
-            <ReceiptLine label="Tax" value={formatMoney(tax)} />
-            <ReceiptLine label="Tip (18%)" value={formatMoney(tip)} />
+            <ReceiptLine label="Tax" value={formatMoney(computedTax)} />
+            <ReceiptLine
+              label={usingRates ? 'Tip (18%)' : 'Tip'}
+              value={formatMoney(computedTip)}
+            />
             <div className="mt-2">
               <ReceiptLine
                 label="Total"
