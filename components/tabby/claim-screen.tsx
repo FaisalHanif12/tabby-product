@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Check, ReceiptText } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ListChecks, Lock, ReceiptText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   formatMoney,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/tabby-data'
 import type { SessionView } from '@/lib/types/tabby'
 import { setItemClaim } from '@/lib/api/tabby-client'
+import { reconcileSelfClaims, allClaimedBy } from '@/lib/domain/claims'
 import { ReceiptCard, ReceiptLine } from './receipt-card'
 import { MemberRoster, Avatar } from './member-avatars'
 
@@ -53,6 +54,9 @@ export function ClaimScreen({
   // "You" — the current member (empty until we have a live identity).
   const selfId = meId ?? ''
 
+  // Once the host finalises ("Settle & lock"), claiming is frozen for everyone.
+  const locked = live && view?.meta?.status === 'settled'
+
   const tax = live && view?.expense ? view.expense.tax : 0
   const tip = live && view?.expense ? view.expense.tip : 0
 
@@ -62,10 +66,21 @@ export function ClaimScreen({
 
   const [items, setItems] = useState<LineItem[]>(sourceItems)
 
-  // Reconcile local (optimistic) state with the latest polled data.
+  // The current user's in-flight claim intentions (itemId -> desired claimed).
+  // Protects rapid taps from being clobbered by the 3s poll before they persist.
+  const pendingRef = useRef<Map<string, boolean>>(new Map())
+
+  // Reconcile polled server data, but keep our own pending taps applied until
+  // the server reflects them (see reconcileSelfClaims).
   useEffect(() => {
-    setItems(sourceItems)
-  }, [sourceItems])
+    const { items: merged, settled } = reconcileSelfClaims(
+      sourceItems,
+      pendingRef.current,
+      selfId,
+    )
+    for (const id of settled) pendingRef.current.delete(id)
+    setItems(merged)
+  }, [sourceItems, selfId])
 
   const subtotal = useMemo(() => subtotalOf(items), [items])
   const computedTax = tax
@@ -77,6 +92,7 @@ export function ClaimScreen({
     [items, selfId],
   )
   const yourCount = items.filter((i) => i.claimedBy.includes(selfId)).length
+  const allMine = allClaimedBy(items, selfId)
 
   // Keep the lifted ClaimFooter in sync via a custom event
   useEffect(() => {
@@ -87,10 +103,25 @@ export function ClaimScreen({
     )
   }, [yourCount, yourItemsTotal])
 
+  /** Persist a single item's desired claimed-state, tracking it as pending. */
+  function writeClaim(id: string, desired: boolean) {
+    if (!(live && sessionId && expenseId && selfId)) return
+    pendingRef.current.set(id, desired)
+    void setItemClaim(
+      id,
+      { sessionId, expenseId, memberId: selfId },
+      desired,
+    ).then((res) => {
+      if (res.ok) onClaimed?.()
+      else pendingRef.current.delete(id) // failed — let the poll snap back
+    })
+  }
+
   function toggleClaim(id: string) {
+    if (locked) return
     const item = items.find((i) => i.id === id)
     if (!item) return
-    const mine = item.claimedBy.includes(selfId)
+    const desired = !item.claimedBy.includes(selfId)
 
     // Optimistic update first.
     setItems((prev) =>
@@ -98,22 +129,35 @@ export function ClaimScreen({
         if (it.id !== id) return it
         return {
           ...it,
-          claimedBy: mine
-            ? it.claimedBy.filter((m) => m !== selfId)
-            : [...it.claimedBy, selfId],
+          claimedBy: desired
+            ? [...it.claimedBy, selfId]
+            : it.claimedBy.filter((m) => m !== selfId),
         }
       }),
     )
 
-    // Reconcile with the server when live; mock mode stays local-only.
-    if (live && sessionId && expenseId && selfId) {
-      void setItemClaim(
-        id,
-        { sessionId, expenseId, memberId: selfId },
-        !mine,
-      ).then((res) => {
-        if (res.ok) onClaimed?.()
-      })
+    writeClaim(id, desired)
+  }
+
+  /** Claim every item for me at once — or clear them all if I already have all. */
+  function toggleClaimAll() {
+    if (locked) return
+    const desired = !allMine
+
+    setItems((prev) =>
+      prev.map((it) => ({
+        ...it,
+        claimedBy: desired
+          ? it.claimedBy.includes(selfId)
+            ? it.claimedBy
+            : [...it.claimedBy, selfId]
+          : it.claimedBy.filter((m) => m !== selfId),
+      })),
+    )
+
+    // Only write the items whose state actually changes.
+    for (const it of items) {
+      if (it.claimedBy.includes(selfId) !== desired) writeClaim(it.id, desired)
     }
   }
 
@@ -143,9 +187,30 @@ export function ClaimScreen({
         <p className="mt-1 text-sm text-muted-ink">
           Claim your items — share a dish by tapping it together.
         </p>
+
+        {locked && (
+          <div className="mt-4 flex items-center gap-2 rounded-2xl border border-hairline bg-receipt px-4 py-2.5 text-sm font-medium text-muted-ink">
+            <Lock className="h-4 w-4 shrink-0 text-spruce" />
+            This split is settled and locked — items can&apos;t be changed.
+          </div>
+        )}
+
         <div className="mt-5 flex justify-center">
           <MemberRoster members={members} activeId={selfId} />
         </div>
+
+        {!locked && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={toggleClaimAll}
+              className="inline-flex items-center gap-1.5 rounded-full border border-leader bg-receipt px-4 py-1.5 text-sm font-semibold text-ink transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine"
+            >
+              <ListChecks className="h-4 w-4" />
+              {allMine ? 'Clear all' : 'Claim all items'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="px-4 pt-6">
@@ -163,10 +228,12 @@ export function ClaimScreen({
                     type="button"
                     onClick={() => toggleClaim(item.id)}
                     aria-pressed={mine}
+                    disabled={locked}
                     className={cn(
                       'flex min-h-[56px] w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-receipt',
-                      mine ? 'bg-tangerine/12' : 'hover:bg-leader/25',
+                      mine ? 'bg-tangerine/12' : !locked && 'hover:bg-leader/25',
+                      locked && 'cursor-default',
                     )}
                   >
                     <span

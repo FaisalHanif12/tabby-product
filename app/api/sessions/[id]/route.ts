@@ -1,6 +1,11 @@
 import { ok, fail, parseBody, serverError } from '@/lib/api/respond'
 import { PatchSessionSchema } from '@/lib/validation/schemas'
-import { getSessionView, getHostToken, patchSession } from '@/lib/db/repository'
+import {
+  getSessionView,
+  getHostToken,
+  patchSession,
+  getSessionStatus,
+} from '@/lib/db/repository'
 import { getHostCookie } from '@/lib/auth/cookies'
 
 export const runtime = 'nodejs'
@@ -38,6 +43,9 @@ export async function PATCH(
     if (!storedToken) return fail('Session not found', 404)
     if (!cookieToken || cookieToken !== storedToken) {
       return fail('Only the host can update this split', 403)
+    }
+    if ((await getSessionStatus(id)) === 'settled') {
+      return fail('This split is settled and locked', 409)
     }
 
     await patchSession(id, data)
