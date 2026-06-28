@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Camera, ReceiptText, HandCoins } from 'lucide-react'
+import { Camera, ReceiptText, HandCoins, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/tabby-data'
 import { useSession } from '@/lib/hooks/use-session'
@@ -9,6 +9,7 @@ import {
   loadActiveSession,
   saveActiveSession,
   clearActiveSession,
+  addBill,
 } from '@/lib/session-store'
 import { AuthButton } from '@/components/auth/auth-button'
 import { AccountLinker } from '@/components/auth/account-linker'
@@ -18,6 +19,7 @@ import { CaptureScreen } from './capture-screen'
 import { ClaimScreen } from './claim-screen'
 import { SettleScreen } from './settle-screen'
 import { ShareSheet } from './share-sheet'
+import { BillsSheet } from './bills-sheet'
 
 type Screen = 'landing' | 'capture' | 'claim' | 'settle'
 
@@ -39,6 +41,7 @@ export function TabbyApp({
 }) {
   const [screen, setScreen] = useState<Screen>(initialScreen)
   const [shareOpen, setShareOpen] = useState(false)
+  const [billsOpen, setBillsOpen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId)
   const [meId, setMeId] = useState<string | null>(initialMeId)
 
@@ -64,13 +67,24 @@ export function TabbyApp({
     setSessionId(id)
     setMeId(memberId)
     saveActiveSession({ sessionId: id, meId: memberId })
+    addBill({ sessionId: id, meId: memberId }) // record in device-local history
   }
 
   function handleNewSplit() {
     clearActiveSession()
     setSessionId(null)
     setMeId(null)
-    setScreen('landing')
+    setBillsOpen(false)
+    setScreen('capture')
+  }
+
+  // Open a past bill from the Bills sheet.
+  function openBill(id: string, memberId: string) {
+    setSessionId(id)
+    setMeId(memberId)
+    saveActiveSession({ sessionId: id, meId: memberId })
+    setBillsOpen(false)
+    setScreen('claim')
   }
 
   const showTabs = screen !== 'landing'
@@ -111,6 +125,14 @@ export function TabbyApp({
                   {peopleCount} people
                 </span>
               )}
+              <button
+                type="button"
+                onClick={() => setBillsOpen(true)}
+                aria-label="Your bills"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-receipt/80 transition-colors hover:bg-receipt/10 hover:text-receipt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine"
+              >
+                <History className="h-[18px] w-[18px]" />
+              </button>
               <AuthButton />
             </div>
           </div>
@@ -195,6 +217,13 @@ export function TabbyApp({
           setShareOpen(false)
           setScreen('claim')
         }}
+      />
+
+      <BillsSheet
+        open={billsOpen}
+        onClose={() => setBillsOpen(false)}
+        onOpenBill={openBill}
+        onNewSplit={handleNewSplit}
       />
     </main>
   )
