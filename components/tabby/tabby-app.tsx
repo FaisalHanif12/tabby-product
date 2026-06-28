@@ -172,8 +172,10 @@ export function TabbyApp({
         {screen === 'settle' && (
           <SettleScreen
             sessionId={sessionId}
+            meId={meId}
             view={view}
             onNewSplit={handleNewSplit}
+            onRefresh={refresh}
           />
         )}
       </div>

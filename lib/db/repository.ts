@@ -467,6 +467,24 @@ export async function getHostToken(sessionId: string): Promise<string | null> {
 }
 
 /**
+ * Cheap status read (single GetItem on META) used to lock writes once a split is
+ * settled. `status` is a DynamoDB reserved word, hence the #s alias.
+ */
+export async function getSessionStatus(
+  sessionId: string,
+): Promise<SessionStatus | null> {
+  const res = await ddb.send(
+    new GetCommand({
+      TableName: TABLE_NAME,
+      Key: groupKey(sessionId, sk.meta()),
+      ProjectionExpression: '#s',
+      ExpressionAttributeNames: { '#s': 'status' },
+    }),
+  )
+  return (res.Item?.status as SessionStatus) ?? null
+}
+
+/**
  * Single Query on PK=GROUP#<id>, mapped into the view the frontend consumes.
  */
 export async function getSessionView(sessionId: string): Promise<SessionView> {

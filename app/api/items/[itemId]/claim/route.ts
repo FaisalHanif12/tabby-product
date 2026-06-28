@@ -1,7 +1,14 @@
 import { ok, fail, parseBody, serverError } from '@/lib/api/respond'
 import { ClaimSchema } from '@/lib/validation/schemas'
-import { claimItem, unclaimItem, getMember } from '@/lib/db/repository'
+import {
+  claimItem,
+  unclaimItem,
+  getMember,
+  getSessionStatus,
+} from '@/lib/db/repository'
 import { getMemberCookie } from '@/lib/auth/cookies'
+
+const SETTLED_LOCKED = 'This split is settled and locked'
 
 export const runtime = 'nodejs'
 
@@ -27,6 +34,9 @@ export async function POST(
     if (!(await authorize(data.sessionId, data.memberId))) {
       return fail('Not a member of this split', 403)
     }
+    if ((await getSessionStatus(data.sessionId)) === 'settled') {
+      return fail(SETTLED_LOCKED, 409)
+    }
     await claimItem({
       sessionId: data.sessionId,
       expenseId: data.expenseId,
@@ -51,6 +61,9 @@ export async function DELETE(
   try {
     if (!(await authorize(data.sessionId, data.memberId))) {
       return fail('Not a member of this split', 403)
+    }
+    if ((await getSessionStatus(data.sessionId)) === 'settled') {
+      return fail(SETTLED_LOCKED, 409)
     }
     await unclaimItem({
       sessionId: data.sessionId,
