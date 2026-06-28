@@ -46,3 +46,54 @@ export function clearActiveSession(): void {
     /* non-fatal */
   }
 }
+
+/* ── Device-local bill history ───────────────────────────────────────────────
+ * Every split this browser created or joined, so the user can revisit, reopen,
+ * or remove past bills WITHOUT needing an account. (Signed-in cross-device
+ * history is the separate Clerk feature.) Newest first.
+ */
+export type StoredBill = { sessionId: string; meId: string; createdAt: number }
+
+const BILLS_KEY = 'tabby:bills'
+
+export function listBills(): StoredBill[] {
+  try {
+    const raw = window.localStorage.getItem(BILLS_KEY)
+    if (!raw) return []
+    const value = JSON.parse(raw)
+    if (!Array.isArray(value)) return []
+    return value
+      .filter(
+        (b) =>
+          b &&
+          typeof b.sessionId === 'string' &&
+          typeof b.meId === 'string',
+      )
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+  } catch {
+    return []
+  }
+}
+
+/** Add (or refresh) a bill at the front of the list — deduped by sessionId. */
+export function addBill(bill: { sessionId: string; meId: string }): void {
+  try {
+    const existing = listBills().filter((b) => b.sessionId !== bill.sessionId)
+    const next: StoredBill[] = [
+      { ...bill, createdAt: Date.now() },
+      ...existing,
+    ].slice(0, 50)
+    window.localStorage.setItem(BILLS_KEY, JSON.stringify(next))
+  } catch {
+    /* non-fatal */
+  }
+}
+
+export function removeBill(sessionId: string): void {
+  try {
+    const next = listBills().filter((b) => b.sessionId !== sessionId)
+    window.localStorage.setItem(BILLS_KEY, JSON.stringify(next))
+  } catch {
+    /* non-fatal */
+  }
+}

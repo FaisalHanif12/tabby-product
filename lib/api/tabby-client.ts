@@ -58,6 +58,11 @@ export function getSession(id: string) {
   return request<SessionView>(`/api/sessions/${id}`, { method: 'GET' })
 }
 
+// Host-only hard delete of an entire split.
+export function deleteSession(id: string) {
+  return request<{ ok: true }>(`/api/sessions/${id}`, { method: 'DELETE' })
+}
+
 export function joinSession(id: string, name: string) {
   return request<{ member: SessionMember; rejoined: boolean }>(
     `/api/sessions/${id}/members`,

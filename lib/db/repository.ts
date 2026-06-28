@@ -6,6 +6,7 @@ import {
   GetCommand,
   UpdateCommand,
   TransactWriteCommand,
+  BatchWriteCommand,
 } from '@aws-sdk/lib-dynamodb'
 import { nanoid } from 'nanoid'
 import { ddb, TABLE_NAME } from './client'
@@ -464,6 +465,53 @@ export async function getHostToken(sessionId: string): Promise<string | null> {
     }),
   )
   return (res.Item?.hostToken as string) ?? null
+}
+
+/**
+ * Hard-delete an entire session: every row under PK=GROUP#<id> (META, members,
+ * expense, items, settlements, user links). Used by the host "delete bill"
+ * action. Batched in chunks of 25 (DynamoDB BatchWrite limit).
+ */
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await ddb.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': pk(sessionId) },
+      ProjectionExpression: 'PK, SK',
+    }),
+  )
+  const rows = (res.Items ?? []) as { PK: string; SK: string }[]
+  for (let i = 0; i < rows.length; i += 25) {
+    const chunk = rows.slice(i, i + 25)
+    await ddb.send(
+      new BatchWriteCommand({
+        RequestItems: {
+          [TABLE_NAME]: chunk.map((r) => ({
+            DeleteRequest: { Key: { PK: r.PK, SK: r.SK } },
+          })),
+        },
+      }),
+    )
+  }
+}
+
+/**
+ * Cheap status read (single GetItem on META) used to lock writes once a split is
+ * settled. `status` is a DynamoDB reserved word, hence the #s alias.
+ */
+export async function getSessionStatus(
+  sessionId: string,
+): Promise<SessionStatus | null> {
+  const res = await ddb.send(
+    new GetCommand({
+      TableName: TABLE_NAME,
+      Key: groupKey(sessionId, sk.meta()),
+      ProjectionExpression: '#s',
+      ExpressionAttributeNames: { '#s': 'status' },
+    }),
+  )
+  return (res.Item?.status as SessionStatus) ?? null
 }
 
 /**

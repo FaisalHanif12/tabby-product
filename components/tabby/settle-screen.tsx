@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, HandCoins } from 'lucide-react'
+import { Check, HandCoins, Lock } from 'lucide-react'
 import { formatMoney, type SettleRow } from '@/lib/tabby-data'
 import type { PaymentHandle, SessionView } from '@/lib/types/tabby'
 import { getSettlement, settleSession } from '@/lib/api/tabby-client'
@@ -10,51 +10,73 @@ import { SaveSplitPrompt } from '@/components/auth/save-split-prompt'
 
 export function SettleScreen({
   sessionId = null,
+  meId = null,
   view = null,
   onNewSplit,
+  onRefresh,
 }: {
   sessionId?: string | null
+  meId?: string | null
   view?: SessionView | null
   onNewSplit: () => void
+  onRefresh?: () => void
 }) {
-  // Purely live and only once an expense exists (mirrors Claim). Without a real
-  // split we show an empty state — and never POST /settle (which would 409).
+  // Purely live and only once an expense exists (mirrors Claim).
   const live = Boolean(sessionId && view?.expense)
   const [rows, setRows] = useState<SettleRow[]>([])
+  const [finalizing, setFinalizing] = useState(false)
   // The payer's saved payment handle (when they're a signed-in user). Prefills
   // every "Pay" deep link; null falls back to the plain button.
   const [payerHandle, setPayerHandle] = useState<PaymentHandle | null>(null)
 
   const merchantName = view?.expense?.merchant || 'the bill'
+  const isHost = Boolean(view?.members.find((m) => m.id === meId)?.isHost)
+  const isSettled = view?.meta?.status === 'settled'
 
-  // Live settlement: finalise the split (host-only; guests get 403 and just
-  // read), then load the real per-member "who owes the payer" amounts.
+  // Read-only live preview — opening Settle no longer finalises the split (that
+  // is now the explicit "Settle & lock" action below). Re-fetches when the
+  // session version changes (a claim or settle), preserving local paid toggles.
+  const version = view?.meta?.version
   useEffect(() => {
     if (!live || !sessionId) return
     let cancelled = false
     void (async () => {
-      await settleSession(sessionId)
       const res = await getSettlement(sessionId)
       if (cancelled || !res.ok || !res.data.settle) return
       setPayerHandle(res.data.payerHandle ?? null)
       const byId = Object.fromEntries(res.data.members.map((m) => [m.id, m]))
-      setRows(
-        res.data.settle.rows.map((r) => ({
-          member: {
-            id: r.memberId,
-            name: byId[r.memberId]?.name ?? 'Someone',
-            initials: byId[r.memberId]?.initials ?? '??',
-            color: byId[r.memberId]?.color ?? 'var(--color-tangerine)',
-          },
-          amount: r.amount,
-          paid: false,
+      const fresh = res.data.settle.rows.map((r) => ({
+        member: {
+          id: r.memberId,
+          name: byId[r.memberId]?.name ?? 'Someone',
+          initials: byId[r.memberId]?.initials ?? '??',
+          color: byId[r.memberId]?.color ?? 'var(--color-tangerine)',
+        },
+        amount: r.amount,
+      }))
+      // Keep any local "mark as paid" flags across refreshes.
+      setRows((prev) =>
+        fresh.map((nr) => ({
+          ...nr,
+          paid: prev.find((p) => p.member.id === nr.member.id)?.paid ?? false,
         })),
       )
     })()
     return () => {
       cancelled = true
     }
-  }, [live, sessionId])
+  }, [live, sessionId, version])
+
+  // Host-only: finalise the split and lock it (POST /settle flips status to
+  // 'settled'; the guards then reject any further claims/edits).
+  function settleAndLock() {
+    if (!sessionId || finalizing) return
+    setFinalizing(true)
+    void settleSession(sessionId).then((res) => {
+      setFinalizing(false)
+      if (res.ok) onRefresh?.()
+    })
+  }
 
   const outstanding = rows
     .filter((r) => !r.paid)
@@ -149,6 +171,24 @@ export function SettleScreen({
       <p className="mt-1 text-sm text-muted-ink">
         You covered {merchantName}. Here&apos;s who owes you.
       </p>
+
+      {isSettled ? (
+        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-hairline bg-receipt px-4 py-2.5 text-sm font-medium text-muted-ink">
+          <Lock className="h-4 w-4 shrink-0 text-spruce" />
+          Settled and locked — these amounts are final.
+        </div>
+      ) : (
+        isHost && (
+          <button
+            type="button"
+            onClick={settleAndLock}
+            disabled={finalizing}
+            className="mt-4 w-full rounded-full bg-spruce px-7 py-3.5 text-base font-semibold text-receipt shadow-[0_14px_30px_-14px_rgba(11,83,65,0.7)] transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine disabled:opacity-60"
+          >
+            {finalizing ? 'Settling…' : 'Settle & lock'}
+          </button>
+        )
+      )}
 
       <ul className="mt-6 flex flex-col gap-3">
         {rows.map((row) => (

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { joinSession } from '@/lib/api/tabby-client'
-import { saveActiveSession } from '@/lib/session-store'
+import { saveActiveSession, addBill } from '@/lib/session-store'
 import { Wordmark } from './wordmark'
 import { JoinScreen } from './join-screen'
 
@@ -17,6 +17,7 @@ export function JoinFlow({ sessionId }: { sessionId: string }) {
     const res = await joinSession(sessionId, name)
     if (res.ok) {
       saveActiveSession({ sessionId, meId: res.data.member.id })
+      addBill({ sessionId, meId: res.data.member.id })
     }
     router.push('/?screen=claim')
   }
