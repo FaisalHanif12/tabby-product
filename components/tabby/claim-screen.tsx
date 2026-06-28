@@ -200,14 +200,23 @@ export function ClaimScreen({
         </div>
 
         {!locked && (
-          <div className="mt-4 flex justify-center">
+          <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl bg-secondary/70 px-4 py-2.5">
+            <p className="text-xs leading-snug text-muted-ink">
+              Tap the items you had — or claim them all.
+            </p>
             <button
               type="button"
               onClick={toggleClaimAll}
-              className="inline-flex items-center gap-1.5 rounded-full border border-leader bg-receipt px-4 py-1.5 text-sm font-semibold text-ink transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine"
+              aria-pressed={allMine}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
+                allMine
+                  ? 'bg-tangerine text-ink'
+                  : 'border border-tangerine/40 text-tangerine hover:bg-tangerine/10',
+              )}
             >
-              <ListChecks className="h-4 w-4" />
-              {allMine ? 'Clear all' : 'Claim all items'}
+              <ListChecks className="h-3.5 w-3.5" />
+              {allMine ? 'Clear all' : 'Claim all'}
             </button>
           </div>
         )}

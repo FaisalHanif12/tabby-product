@@ -140,8 +140,8 @@ export function SettleScreen({
   // ── All paid celebration (payer's view) ──
   if (selfIsPayer && allPaid) {
     return (
-      <div className="flex min-h-full flex-col items-center justify-center px-6 pb-8 pt-10 text-center">
-        <div className="relative flex h-28 w-28 items-center justify-center">
+      <div className="flex min-h-full flex-col items-center justify-center px-6 pb-8 pt-10 text-center motion-safe:animate-rise">
+        <div className="relative flex h-28 w-28 items-center justify-center motion-safe:animate-pop">
           <span className="ping-soft absolute inset-0 rounded-full bg-mint" />
           <span className="relative flex h-24 w-24 items-center justify-center rounded-full bg-mint shadow-[0_18px_40px_-16px_rgba(111,224,172,0.9)]">
             <Check className="h-12 w-12 text-ink" strokeWidth={3} />
@@ -155,6 +155,11 @@ export function SettleScreen({
           <span className="font-semibold text-ink">{merchantName}</span>. Nice
           work.
         </p>
+        <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-mint/30 px-3 py-1 text-xs font-semibold text-spruce">
+          <Check className="h-3.5 w-3.5" strokeWidth={3} />
+          Settled — locked
+        </span>
+
         <SaveSplitPrompt />
         <button
           type="button"
