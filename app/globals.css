@@ -367,15 +367,12 @@
   }
 }
 
-/* ── Clerk sign-in/up modal — keep it phone-sized inside Tabby's mobile frame ──
- * Clerk renders the modal at the document root (centered on the viewport), so by
- * default it is wider than our 390px frame. Constrain the centered modal box and
- * the card so the auth UI looks native to the phone mockup. */
+/* ── Clerk sign-in/up modal — shrink it to fit Tabby's 390px mobile frame ──
+ * Clerk renders the modal centered on the viewport, wider than our frame. We
+ * scale the WHOLE modal box down as a single unit (transform), which keeps the
+ * card and its footer perfectly aligned — unlike width overrides, which detach
+ * Clerk's internal pieces. */
 .cl-modalContent {
-  max-width: 360px !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-}
-.cl-card {
-  width: 100% !important;
+  transform: scale(0.82);
+  transform-origin: center center;
 }
