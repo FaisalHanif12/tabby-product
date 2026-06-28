@@ -84,6 +84,7 @@ export function ClaimScreen({
     [items, selfId],
   )
   const yourCount = items.filter((i) => i.claimedBy.includes(selfId)).length
+  const allClaimed = items.length > 0 && yourCount === items.length
 
   // Keep the lifted ClaimFooter in sync via a custom event
   useEffect(() => {
@@ -124,6 +125,31 @@ export function ClaimScreen({
     }
   }
 
+  function toggleClaimAll() {
+    const claim = !allClaimed
+    // Optimistic: claim (or release) every item for the current member.
+    setItems((prev) =>
+      prev.map((it) => {
+        const mine = it.claimedBy.includes(selfId)
+        if (claim && !mine) return { ...it, claimedBy: [...it.claimedBy, selfId] }
+        if (!claim && mine)
+          return { ...it, claimedBy: it.claimedBy.filter((m) => m !== selfId) }
+        return it
+      }),
+    )
+
+    if (live && sessionId && expenseId && selfId) {
+      const targets = items.filter((it) =>
+        claim ? !it.claimedBy.includes(selfId) : it.claimedBy.includes(selfId),
+      )
+      Promise.all(
+        targets.map((it) =>
+          setItemClaim(it.id, { sessionId, expenseId, memberId: selfId }, claim),
+        ),
+      ).then(() => onClaimed?.())
+    }
+  }
+
   return (
     <div>
       <div className="px-5 pt-4">
@@ -135,6 +161,25 @@ export function ClaimScreen({
         </p>
         <div className="mt-5 flex justify-center">
           <MemberRoster members={members} activeId={selfId} />
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl bg-secondary/70 px-4 py-2.5">
+          <p className="text-xs leading-snug text-muted-ink">
+            Tap the items you had — or claim them all.
+          </p>
+          <button
+            type="button"
+            onClick={toggleClaimAll}
+            aria-pressed={allClaimed}
+            className={cn(
+              'shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
+              allClaimed
+                ? 'bg-tangerine text-ink'
+                : 'border border-tangerine/40 text-tangerine hover:bg-tangerine/10',
+            )}
+          >
+            {allClaimed ? 'Claimed all' : 'Claim all'}
+          </button>
         </div>
       </div>
 
