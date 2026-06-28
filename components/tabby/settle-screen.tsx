@@ -1,14 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, HandCoins } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  INITIAL_SETTLE,
-  MERCHANT,
-  formatMoney,
-  type SettleRow,
-} from '@/lib/tabby-data'
+import { formatMoney, type SettleRow } from '@/lib/tabby-data'
 import type { PaymentHandle, SessionView } from '@/lib/types/tabby'
 import { getSettlement, settleSession } from '@/lib/api/tabby-client'
 import { paymentLink, payButtonLabel } from '@/lib/domain/payment-links'
@@ -23,15 +18,16 @@ export function SettleScreen({
   view?: SessionView | null
   onNewSplit: () => void
 }) {
+  // Purely live: no mock settlement. Without an active split we show an empty
+  // state instead of placeholder amounts.
   const live = Boolean(sessionId)
-  const [rows, setRows] = useState<SettleRow[]>(live ? [] : INITIAL_SETTLE)
+  const [rows, setRows] = useState<SettleRow[]>([])
   const [copied, setCopied] = useState(false)
   // The payer's saved payment handle (when they're a signed-in user). Prefills
   // every "Pay" deep link; null falls back to the plain button.
   const [payerHandle, setPayerHandle] = useState<PaymentHandle | null>(null)
 
-  const merchantName =
-    live && view?.expense?.merchant ? view.expense.merchant : MERCHANT.name
+  const merchantName = view?.expense?.merchant || 'the bill'
 
   // Live settlement: finalise the split (host-only; guests get 403 and just
   // read), then load the real per-member "who owes the payer" amounts.
@@ -87,6 +83,23 @@ export function SettleScreen({
     navigator.clipboard?.writeText(text).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
+  }
+
+  // Empty state: no active split to settle yet.
+  if (!live) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center px-6 pb-10 pt-16 text-center">
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-spruce/10 text-spruce">
+          <HandCoins className="h-7 w-7" />
+        </span>
+        <h1 className="mt-5 font-heading text-2xl font-bold text-ink">
+          Nothing to settle yet
+        </h1>
+        <p className="mt-1.5 text-sm text-muted-ink">
+          Capture a receipt and claim items — the who-owes-who shows up here.
+        </p>
+      </div>
+    )
   }
 
   if (allSettled) {
