@@ -16,12 +16,6 @@ const clerkAppearance = {
     borderRadius: '0.75rem',
     fontFamily: 'var(--font-geist-sans), system-ui, sans-serif',
   },
-  elements: {
-    rootBox: 'w-full',
-    cardBox: 'w-full max-w-[340px] mx-auto',
-    card: 'w-full max-w-[340px] mx-auto',
-    modalContent: 'w-full max-w-[340px] mx-auto',
-  },
 }
 
 /**
