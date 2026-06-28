@@ -186,7 +186,11 @@
     overflow: hidden;
   }
   body {
-    @apply bg-canvas text-foreground font-sans;
+    @apply text-foreground font-sans;
+    /* The whole document carries the page gradient (fixed), so there is never a
+       differently-coloured strip below the content — the background is uniform
+       top-to-bottom regardless of window height. */
+    background: linear-gradient(to bottom, #eef2ef 0%, #e7ede9 100%) fixed;
     height: 100%;
     overflow: hidden;
   }
