@@ -179,8 +179,9 @@ export function TabbyApp({
       </div>
 
       {/* ── REGION 3: FOOTER (flex-shrink:0, always visible) ── */}
-      {/* Only the Claim screen has a bottom bar; others render nothing here.     */}
+      {/* Claim + Settle each pin their primary action here, below the scroll. */}
       {screen === 'claim' && <ClaimFooter onSettle={() => setScreen('settle')} />}
+      {screen === 'settle' && <SettleFooter />}
 
       {/* ── OVERLAY: invite bottom sheet (slides over the dimmed receipt) ── */}
       <ShareSheet
@@ -231,6 +232,60 @@ function ClaimFooter({ onSettle }: { onSettle: () => void }) {
           className="rounded-full bg-tangerine px-7 py-3 font-semibold text-ink transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
         >
           Settle up
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/*
+ * SettleFooter mirrors ClaimFooter: a pinned bottom bar (outside the scroll
+ * zone) showing the outstanding total + a Copy-summary action. Fed by the
+ * `tabby:settle-summary` event from SettleScreen; hides itself until there are
+ * unpaid rows.
+ */
+function SettleFooter() {
+  const [summary, setSummary] = useState({
+    outstanding: 0,
+    text: '',
+    ready: false,
+  })
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    function handler(e: Event) {
+      const detail = (
+        e as CustomEvent<{ outstanding: number; text: string; ready: boolean }>
+      ).detail
+      setSummary(detail)
+    }
+    window.addEventListener('tabby:settle-summary', handler)
+    return () => window.removeEventListener('tabby:settle-summary', handler)
+  }, [])
+
+  if (!summary.ready) return null
+
+  function copy() {
+    navigator.clipboard?.writeText(summary.text).catch(() => {})
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
+  }
+
+  return (
+    <div className="shrink-0 px-4 pb-4 pt-2">
+      <div className="flex items-center justify-between gap-4 rounded-2xl bg-ink/95 px-5 py-3 shadow-[0_-4px_20px_-6px_rgba(0,0,0,0.35)] backdrop-blur">
+        <div className="flex flex-col">
+          <span className="text-xs text-receipt/60">Still owed to you</span>
+          <span className="font-mono text-xl font-semibold tabular-nums text-receipt">
+            {formatMoney(summary.outstanding)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={copy}
+          className="rounded-full bg-tangerine px-7 py-3 font-semibold text-ink transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
+        >
+          {copied ? 'Copied' : 'Copy summary'}
         </button>
       </div>
     </div>
