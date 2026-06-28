@@ -5,22 +5,53 @@ import Image from 'next/image'
 import { Check, Copy, Share2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { JOINED_MEMBERS, SHARE_LINK } from '@/lib/tabby-data'
+import type { SessionMember } from '@/lib/types/tabby'
 
 export function ShareSheet({
   open,
   onClose,
   onGoToReceipt,
+  sessionId = null,
+  members = null,
 }: {
   open: boolean
   onClose: () => void
   onGoToReceipt: () => void
+  sessionId?: string | null
+  members?: SessionMember[] | null
 }) {
   const [copied, setCopied] = useState(false)
 
   if (!open) return null
 
+  // Real share target when a session is active; mock link otherwise.
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : ''
+  const shareUrl = sessionId
+    ? `${origin}/s/${sessionId}/join`
+    : `https://${SHARE_LINK}`
+  const shareDisplay =
+    sessionId && typeof window !== 'undefined'
+      ? `${window.location.host}/s/${sessionId}/join`
+      : sessionId
+        ? `/s/${sessionId}/join`
+        : SHARE_LINK
+
+  // Live members when we have a session (even an empty list — no mock flash);
+  // only the truly session-less demo falls back to JOINED_MEMBERS.
+  const joined =
+    members && members.length > 0
+      ? members.map((m) => ({
+          id: m.id,
+          initials: m.initials,
+          color: m.color,
+        }))
+      : sessionId
+        ? []
+        : JOINED_MEMBERS
+
   function copyLink() {
-    navigator.clipboard?.writeText(`https://${SHARE_LINK}`).catch(() => {})
+    navigator.clipboard?.writeText(shareUrl).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
   }
@@ -31,7 +62,7 @@ export function ShareSheet({
         .share({
           title: 'Join my Tabby split',
           text: 'Tap the link and add your name to split the bill.',
-          url: `https://${SHARE_LINK}`,
+          url: shareUrl,
         })
         .catch(() => {})
     } else {
@@ -92,7 +123,7 @@ export function ShareSheet({
         <div className="mt-5 flex items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center rounded-full border border-hairline bg-receipt px-4 py-3">
             <span className="truncate font-mono text-sm text-ink">
-              {SHARE_LINK}
+              {shareDisplay}
             </span>
           </div>
           <button
@@ -130,7 +161,7 @@ export function ShareSheet({
         {/* Joined indicator */}
         <div className="mt-5 flex items-center justify-center gap-2.5">
           <div className="flex -space-x-2">
-            {JOINED_MEMBERS.map((m) => (
+            {joined.map((m) => (
               <span
                 key={m.id}
                 style={{ backgroundColor: m.color }}
@@ -142,7 +173,7 @@ export function ShareSheet({
           </div>
           <span className="text-sm font-medium text-muted-ink">
             <span className="font-semibold text-spruce">
-              {JOINED_MEMBERS.length} joined
+              {joined.length} joined
             </span>{' '}
             so far
           </span>

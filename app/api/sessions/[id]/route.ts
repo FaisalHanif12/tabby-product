@@ -1,6 +1,12 @@
 import { ok, fail, parseBody, serverError } from '@/lib/api/respond'
 import { PatchSessionSchema } from '@/lib/validation/schemas'
-import { getSessionView, getHostToken, patchSession } from '@/lib/db/repository'
+import {
+  getSessionView,
+  getHostToken,
+  patchSession,
+  getSessionStatus,
+  deleteSession,
+} from '@/lib/db/repository'
 import { getHostCookie } from '@/lib/auth/cookies'
 
 export const runtime = 'nodejs'
@@ -39,11 +45,36 @@ export async function PATCH(
     if (!cookieToken || cookieToken !== storedToken) {
       return fail('Only the host can update this split', 403)
     }
+    if ((await getSessionStatus(id)) === 'settled') {
+      return fail('This split is settled and locked', 409)
+    }
 
     await patchSession(id, data)
     const view = await getSessionView(id)
     return ok(view)
   } catch (err) {
     return serverError('PATCH /api/sessions/[id]', err)
+  }
+}
+
+// DELETE /api/sessions/[id] — host-only hard delete of the whole split.
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+  try {
+    const [storedToken, cookieToken] = await Promise.all([
+      getHostToken(id),
+      getHostCookie(id),
+    ])
+    if (!storedToken) return ok({ ok: true }) // already gone — treat as success
+    if (!cookieToken || cookieToken !== storedToken) {
+      return fail('Only the host can delete this split', 403)
+    }
+    await deleteSession(id)
+    return ok({ ok: true })
+  } catch (err) {
+    return serverError('DELETE /api/sessions/[id]', err)
   }
 }

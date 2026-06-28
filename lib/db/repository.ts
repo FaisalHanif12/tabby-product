@@ -6,19 +6,36 @@ import {
   GetCommand,
   UpdateCommand,
   TransactWriteCommand,
+  BatchWriteCommand,
 } from '@aws-sdk/lib-dynamodb'
 import { nanoid } from 'nanoid'
 import { ddb, TABLE_NAME } from './client'
-import { pk, sk, groupKey, skPrefix } from './keys'
+import {
+  pk,
+  sk,
+  groupKey,
+  userKey,
+  skPrefix,
+  gsi1Pk,
+  gsi1Sk,
+  GSI1_NAME,
+  GSI1_PK,
+  GSI1_SK,
+} from './keys'
 import { initialsOf, colorForIndex } from '@/lib/domain/members'
+import { splitBill } from '@/lib/domain/split'
 import type {
   SessionView,
   SessionMeta,
   SessionMember,
   Expense,
   SessionItem,
+  SessionStatus,
   Settlement,
   SettlementBreakdownRow,
+  UserProfile,
+  UserSplitLink,
+  PaymentHandle,
 } from '@/lib/types/tabby'
 
 /* ── Row shapes (single table) ─────────────────────────────────────── */
@@ -451,6 +468,53 @@ export async function getHostToken(sessionId: string): Promise<string | null> {
 }
 
 /**
+ * Hard-delete an entire session: every row under PK=GROUP#<id> (META, members,
+ * expense, items, settlements, user links). Used by the host "delete bill"
+ * action. Batched in chunks of 25 (DynamoDB BatchWrite limit).
+ */
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await ddb.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': pk(sessionId) },
+      ProjectionExpression: 'PK, SK',
+    }),
+  )
+  const rows = (res.Items ?? []) as { PK: string; SK: string }[]
+  for (let i = 0; i < rows.length; i += 25) {
+    const chunk = rows.slice(i, i + 25)
+    await ddb.send(
+      new BatchWriteCommand({
+        RequestItems: {
+          [TABLE_NAME]: chunk.map((r) => ({
+            DeleteRequest: { Key: { PK: r.PK, SK: r.SK } },
+          })),
+        },
+      }),
+    )
+  }
+}
+
+/**
+ * Cheap status read (single GetItem on META) used to lock writes once a split is
+ * settled. `status` is a DynamoDB reserved word, hence the #s alias.
+ */
+export async function getSessionStatus(
+  sessionId: string,
+): Promise<SessionStatus | null> {
+  const res = await ddb.send(
+    new GetCommand({
+      TableName: TABLE_NAME,
+      Key: groupKey(sessionId, sk.meta()),
+      ProjectionExpression: '#s',
+      ExpressionAttributeNames: { '#s': 'status' },
+    }),
+  )
+  return (res.Item?.status as SessionStatus) ?? null
+}
+
+/**
  * Single Query on PK=GROUP#<id>, mapped into the view the frontend consumes.
  */
 export async function getSessionView(sessionId: string): Promise<SessionView> {
@@ -543,4 +607,244 @@ function mapItem(row: Row): SessionItem {
     price: row.price ?? 0,
     claimedBy: toStringArray(row.claimedBy),
   }
+}
+
+/* ── Optional auth: profiles, account linking, saved history ─────────────────
+ *
+ * All additive. The anonymous flow never calls any of these. Profiles live in a
+ * separate USER#<userId> partition (no TTL — they persist). USERLINK rows live
+ * under the session's own GROUP# partition (so session TTL cleans them up) but
+ * also carry GSI1 attributes so a user can list their splits via one GSI query.
+ */
+
+/** Compute a member's settle-time share (and the bill total) from a live view. */
+function computeMemberFacts(
+  view: SessionView,
+  memberId: string,
+): { share: number; total: number } {
+  if (!view.expense) return { share: 0, total: 0 }
+  const split = splitBill({
+    items: view.items.map((it) => ({
+      id: it.id,
+      price: it.price,
+      claimedBy: it.claimedBy,
+    })),
+    memberIds: view.members.map((m) => m.id),
+    tax: view.expense.tax,
+    tip: view.expense.tip,
+  })
+  const mine = split.perMember.find((m) => m.memberId === memberId)
+  return { share: mine?.total ?? 0, total: view.expense.total }
+}
+
+function mapProfile(row: Row): UserProfile {
+  return {
+    userId: row.userId,
+    displayName: row.displayName ?? null,
+    paymentHandle: (row.paymentHandle as PaymentHandle | undefined) ?? null,
+    avatarUrl: row.avatarUrl ?? null,
+    updatedAt: row.updatedAt ?? 0,
+  }
+}
+
+function mapUserLink(row: Row): UserSplitLink {
+  return {
+    userId: row.userId,
+    sessionId: row.sessionId,
+    memberId: row.memberId,
+    createdAt: row.createdAt ?? 0,
+    merchant: row.merchant ?? null,
+    total: row.total ?? 0,
+    share: row.share ?? 0,
+    status: (row.status as SessionStatus) ?? 'open',
+  }
+}
+
+export async function getUserProfile(
+  userId: string,
+): Promise<UserProfile | null> {
+  const res = await ddb.send(
+    new GetCommand({
+      TableName: TABLE_NAME,
+      Key: userKey(userId, sk.profile()),
+    }),
+  )
+  return res.Item ? mapProfile(res.Item) : null
+}
+
+/**
+ * Upsert the signed-in user's personalization. Only provided fields change;
+ * `undefined` leaves the existing value untouched (so saving just a payment
+ * handle doesn't wipe the display name).
+ */
+export async function upsertUserProfile(
+  userId: string,
+  input: {
+    displayName?: string | null
+    paymentHandle?: PaymentHandle | null
+    avatarUrl?: string | null
+  },
+): Promise<UserProfile> {
+  const existing = await getUserProfile(userId)
+  const profile: UserProfile = {
+    userId,
+    displayName:
+      input.displayName !== undefined
+        ? input.displayName
+        : (existing?.displayName ?? null),
+    paymentHandle:
+      input.paymentHandle !== undefined
+        ? input.paymentHandle
+        : (existing?.paymentHandle ?? null),
+    avatarUrl:
+      input.avatarUrl !== undefined
+        ? input.avatarUrl
+        : (existing?.avatarUrl ?? null),
+    updatedAt: Date.now(),
+  }
+
+  const row: Row = {
+    ...userKey(userId, sk.profile()),
+    type: 'PROFILE',
+    ...profile,
+    // Intentionally NO ttl: profiles persist beyond the 7-day session window.
+  }
+  await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: row }))
+  return profile
+}
+
+/**
+ * Link a guest member to a signed-in user.
+ *
+ * GUEST IDENTITY → userId MAPPING:
+ * A guest is identified per-session by a cookie `tabby_member_<sessionId>` whose
+ * value is their `memberId` in that session (set when they create or join). On
+ * first sign-in we take each such (sessionId, memberId) pair the browser holds
+ * and write ONE USERLINK row binding it to the Clerk `userId`. The row is keyed
+ * by SK=USERLINK#<userId>, so re-linking the same split is idempotent (a Put
+ * overwrites), and a single session can be linked by multiple different users
+ * (each is a distinct member). We verify the member actually exists in the
+ * session before linking, so a forged id can't attach a stranger's split.
+ */
+export async function linkSessionToUser(opts: {
+  userId: string
+  sessionId: string
+  memberId: string
+}): Promise<UserSplitLink | null> {
+  const view = await getSessionView(opts.sessionId)
+  if (!view.meta) return null
+  const member = view.members.find((m) => m.id === opts.memberId)
+  if (!member) return null
+
+  const facts = computeMemberFacts(view, opts.memberId)
+  const createdAt = view.meta.createdAt || Date.now()
+  const ttl = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS
+
+  const link: UserSplitLink = {
+    userId: opts.userId,
+    sessionId: opts.sessionId,
+    memberId: opts.memberId,
+    createdAt,
+    merchant: view.expense?.merchant ?? null,
+    total: view.expense?.total ?? 0,
+    share: facts.share,
+    status: view.meta.status,
+  }
+
+  const row: Row = {
+    ...groupKey(opts.sessionId, sk.userLink(opts.userId)),
+    type: 'USERLINK',
+    [GSI1_PK]: gsi1Pk(opts.userId),
+    [GSI1_SK]: gsi1Sk(createdAt, opts.sessionId),
+    ...link,
+    ttl,
+  }
+  await ddb.send(new PutCommand({ TableName: TABLE_NAME, Item: row }))
+  return link
+}
+
+export interface HistoryRow {
+  link: UserSplitLink
+  /** Fresh facts when the session still exists; null once it has TTL-expired. */
+  live: {
+    merchant: string | null
+    total: number
+    share: number
+    status: SessionStatus
+  } | null
+}
+
+/**
+ * List a user's splits newest-first via GSI1, enriching each with live data when
+ * the session still exists. If GSI1 isn't provisioned yet (see the terraform
+ * diff), degrade to an empty list instead of crashing the history page.
+ */
+export async function listUserHistory(userId: string): Promise<HistoryRow[]> {
+  let items: Row[]
+  try {
+    const res = await ddb.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        IndexName: GSI1_NAME,
+        KeyConditionExpression: `${GSI1_PK} = :u`,
+        ExpressionAttributeValues: { ':u': gsi1Pk(userId) },
+        ScanIndexForward: false, // newest first
+      }),
+    )
+    items = (res.Items ?? []) as Row[]
+  } catch (err) {
+    console.log(
+      '[v0] listUserHistory GSI1 query failed (is GSI1 provisioned?):',
+      err instanceof Error ? err.message : err,
+    )
+    return []
+  }
+
+  const rows: HistoryRow[] = []
+  for (const it of items) {
+    const link = mapUserLink(it)
+    let live: HistoryRow['live'] = null
+    try {
+      const view = await getSessionView(link.sessionId)
+      if (view.meta) {
+        const facts = computeMemberFacts(view, link.memberId)
+        live = {
+          merchant: view.expense?.merchant ?? null,
+          total: view.expense?.total ?? facts.total,
+          share: facts.share,
+          status: view.meta.status,
+        }
+      }
+    } catch {
+      /* session unreadable — fall back to the stored snapshot */
+    }
+    rows.push({ link, live })
+  }
+  return rows
+}
+
+/**
+ * The payer's saved payment handle for a split, or null. Used to prefill the
+ * settle deep-links: if the payer is a signed-in user with a saved handle, every
+ * "Pay" button targets it. Found by locating the USERLINK row whose member is
+ * the payer, then reading that user's profile.
+ */
+export async function getPayerPaymentHandle(
+  sessionId: string,
+  payerId: string,
+): Promise<PaymentHandle | null> {
+  const res = await ddb.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+      ExpressionAttributeValues: {
+        ':pk': pk(sessionId),
+        ':sk': skPrefix.userLink,
+      },
+    }),
+  )
+  const linkRow = (res.Items ?? []).find((r) => r.memberId === payerId)
+  if (!linkRow) return null
+  const profile = await getUserProfile(linkRow.userId as string)
+  return profile?.paymentHandle ?? null
 }

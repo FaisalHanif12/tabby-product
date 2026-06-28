@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Camera,
   HandCoins,
@@ -10,14 +10,19 @@ import {
   Upload,
   Hand,
 } from 'lucide-react'
+import { formatMoney } from '@/lib/tabby-data'
 import {
-  MERCHANT,
-  PARSED_ITEMS,
-  TAX_RATE,
-  TIP_RATE,
-  formatMoney,
-} from '@/lib/tabby-data'
+  createSession,
+  presignUpload,
+  uploadToS3,
+  parseReceipt,
+  createExpense,
+} from '@/lib/api/tabby-client'
 import { ReceiptCard } from './receipt-card'
+
+// Neutral skeleton rows shown while the real receipt is being read — varied
+// widths for a realistic shimmer, with NO placeholder merchant or items.
+const SKELETON_ROWS = ['w-40', 'w-28', 'w-36', 'w-24', 'w-32']
 
 type EditItem = { id: string; label: string; price: string }
 
@@ -27,35 +32,116 @@ const HOW_IT_WORKS = [
   { icon: HandCoins, label: 'Settle' },
 ]
 
-export function CaptureScreen({ onStart }: { onStart: () => void }) {
+export function CaptureScreen({
+  sessionId,
+  onSession,
+  onStart,
+}: {
+  sessionId: string | null
+  onSession: (sessionId: string, meId: string) => void
+  onStart: () => void
+}) {
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [items, setItems] = useState<EditItem[]>([])
+  const [merchant, setMerchant] = useState<string | null>(null)
   const [tax, setTax] = useState('0.00')
   const [tip, setTip] = useState('0.00')
+  // Object URL of the actual uploaded image, shown (with the scan-line) while
+  // the real receipt is being read.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  // Holds the session id synchronously within the scan pipeline (the lifted
+  // sessionId prop may not have re-rendered yet when "Start splitting" fires).
+  const liveSessionId = useRef<string | null>(null)
+
+  // Revoke the preview object URL when it changes or on unmount (no leaks).
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   function handleScan() {
-    setScanning(true)
+    fileRef.current?.click()
   }
 
-  // Mock OCR: after a short scan, populate the editable review.
-  useEffect(() => {
-    if (!scanning) return
-    const timer = setTimeout(() => {
-      const parsed = PARSED_ITEMS.map((p) => ({
-        id: p.id,
-        label: p.label,
-        price: p.price.toFixed(2),
-      }))
-      const sub = PARSED_ITEMS.reduce((s, p) => s + p.price, 0)
-      setItems(parsed)
-      setTax((sub * TAX_RATE).toFixed(2))
-      setTip((sub * TIP_RATE).toFixed(2))
-      setScanned(true)
-      setScanning(false)
-    }, 2000)
-    return () => clearTimeout(timer)
-  }, [scanning])
+  // Drop the user into a blank, editable receipt — the flow never dead-ends.
+  function fallbackToEmpty() {
+    setItems([])
+    setMerchant(null)
+    setTax('0.00')
+    setTip('0.00')
+    setScanned(true)
+    setScanning(false)
+  }
+
+  // Real pipeline: create session -> presign -> PUT to S3 -> OCR parse.
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file later
+    if (!file) return
+
+    // Show the real receipt the user just picked while we read it.
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+    setScanning(true)
+
+    const created = await createSession()
+    if (!created.ok) return fallbackToEmpty()
+    const sid = created.data.id
+    liveSessionId.current = sid
+    onSession(sid, created.data.hostMemberId)
+
+    const presign = await presignUpload({
+      sessionId: sid,
+      contentType: file.type,
+      size: file.size,
+    })
+    if (!presign.ok) return fallbackToEmpty()
+
+    const uploaded = await uploadToS3(presign.data.uploadUrl, file)
+    if (!uploaded) return fallbackToEmpty()
+
+    const parsed = await parseReceipt(sid, presign.data.objectKey)
+    if (!parsed.ok) return fallbackToEmpty()
+
+    const receipt = parsed.data.receipt
+    setMerchant(receipt.merchant)
+    setItems(
+      receipt.items.map((it, i) => ({
+        id: `p${i}`,
+        label: it.label,
+        price: (it.unitPrice * (it.qty || 1)).toFixed(2),
+      })),
+    )
+    setTax((receipt.tax ?? 0).toFixed(2))
+    setTip((receipt.tip ?? 0).toFixed(2))
+    setScanned(true)
+    setScanning(false)
+  }
+
+  // "Start splitting": persist the reviewed receipt as the session's expense,
+  // then continue to the invite sheet. If there's no live session (offline /
+  // fallback), proceed anyway so the mock demo path stays intact.
+  async function handleStart() {
+    const sid = sessionId ?? liveSessionId.current
+    if (sid && items.length > 0) {
+      await createExpense(sid, {
+        merchant,
+        items: items.map((it) => ({
+          label: it.label.trim() || 'Item',
+          qty: 1,
+          unitPrice: Number(it.price) || 0,
+        })),
+        tax: Number(tax) || 0,
+        tip: Number(tip) || 0,
+      })
+    }
+    onStart()
+  }
 
   function updateItem(id: string, field: 'label' | 'price', value: string) {
     setItems((prev) =>
@@ -90,27 +176,35 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
         </div>
 
         <div className="flex flex-1 flex-col justify-center">
-          <div className="relative overflow-hidden rounded-[20px]">
-            <ReceiptCard
-              merchant={MERCHANT.name}
-              date={MERCHANT.date}
-              className="mx-auto max-w-md rounded-[20px]"
-            >
-              <ul className="mt-6 flex flex-col gap-3">
-                {PARSED_ITEMS.map((item, i) => (
-                  <li
-                    key={item.id}
-                    className="shimmer-row flex items-center justify-between gap-3"
-                    style={{ animationDelay: `${i * 0.18}s` }}
-                  >
-                    <span className="font-medium text-ink">{item.label}</span>
-                    <span className="font-mono tabular-nums text-ink">
-                      {formatMoney(item.price)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </ReceiptCard>
+          <div className="relative mx-auto mt-6 w-full max-w-md overflow-hidden rounded-[20px]">
+            {previewUrl ? (
+              // The actual uploaded receipt, with the scan-line sweeping over it.
+              <div className="overflow-hidden rounded-[20px] border border-hairline bg-receipt shadow-[0_16px_40px_-20px_rgba(11,83,65,0.28)]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={previewUrl}
+                  alt="Your receipt, being scanned"
+                  className="max-h-[420px] w-full object-contain"
+                />
+              </div>
+            ) : (
+              <ReceiptCard className="rounded-[20px]">
+                <ul className="mt-6 flex flex-col gap-4">
+                  {SKELETON_ROWS.map((width, i) => (
+                    <li
+                      key={i}
+                      className="shimmer-row flex items-center justify-between gap-3"
+                      style={{ animationDelay: `${i * 0.18}s` }}
+                    >
+                      <span
+                        className={`h-3.5 rounded-full bg-leader/60 ${width}`}
+                      />
+                      <span className="h-3.5 w-12 rounded-full bg-leader/60" />
+                    </li>
+                  ))}
+                </ul>
+              </ReceiptCard>
+            )}
             {/* tangerine scan-line sweeping over the receipt */}
             <span className="scan-line" aria-hidden="true" />
           </div>
@@ -143,6 +237,15 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
             Start by snapping the receipt — we&apos;ll pull out the items.
           </p>
         </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={handleFile}
+        />
 
         {/* Centered, inviting dropzone fills the available space */}
         <div className="flex flex-1 flex-col justify-center py-6">
@@ -304,7 +407,7 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
       <div className="sticky bottom-0 z-10 mx-auto mt-4 w-full max-w-md bg-gradient-to-t from-canvas via-canvas to-transparent pb-1 pt-3">
         <button
           type="button"
-          onClick={onStart}
+          onClick={handleStart}
           className="w-full rounded-full bg-tangerine px-7 py-4 text-base font-semibold text-ink shadow-[0_12px_28px_-12px_rgba(255,138,43,0.7)] transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
         >
           Start splitting

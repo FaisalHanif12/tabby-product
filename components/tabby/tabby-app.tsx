@@ -1,15 +1,23 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Camera, ReceiptText, HandCoins } from 'lucide-react'
+import { Camera, ReceiptText, HandCoins, CircleUser } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/tabby-data'
+import { useSession } from '@/lib/hooks/use-session'
+import {
+  saveActiveSession,
+  clearActiveSession,
+  addBill,
+} from '@/lib/session-store'
+import { AccountLinker } from '@/components/auth/account-linker'
 import { Wordmark } from './wordmark'
 import { LandingScreen } from './landing-screen'
 import { CaptureScreen } from './capture-screen'
 import { ClaimScreen } from './claim-screen'
 import { SettleScreen } from './settle-screen'
 import { ShareSheet } from './share-sheet'
+import { ProfileSheet } from './profile-sheet'
 
 type Screen = 'landing' | 'capture' | 'claim' | 'settle'
 
@@ -21,13 +29,58 @@ const TABS: { id: Screen; label: string; icon: typeof Camera }[] = [
 
 export function TabbyApp({
   initialScreen = 'landing',
+  initialSessionId = null,
+  initialMeId = null,
 }: {
   initialScreen?: Screen
+  /** Deep-link session (e.g. opening a split from /history): ?s=&m=. */
+  initialSessionId?: string | null
+  initialMeId?: string | null
 }) {
   const [screen, setScreen] = useState<Screen>(initialScreen)
   const [shareOpen, setShareOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(initialSessionId)
+  const [meId, setMeId] = useState<string | null>(initialMeId)
+
+  // A bill is active ONLY via an explicit deep-link (?s=&m= — from a join link
+  // or the Profile history). A plain refresh does NOT auto-resume the last bill;
+  // it starts fresh, and past bills remain in the Profile → Your bills history.
+  useEffect(() => {
+    if (initialSessionId && initialMeId) {
+      saveActiveSession({ sessionId: initialSessionId, meId: initialMeId })
+    }
+  }, [initialSessionId, initialMeId])
+
+  // Live polling (pauses on tab-hidden, see use-session.ts). Null id => no-op.
+  const { view, refresh } = useSession(sessionId)
+
+  function handleSession(id: string, memberId: string) {
+    setSessionId(id)
+    setMeId(memberId)
+    saveActiveSession({ sessionId: id, meId: memberId })
+    addBill({ sessionId: id, meId: memberId }) // record in device-local history
+  }
+
+  function handleNewSplit() {
+    clearActiveSession()
+    setSessionId(null)
+    setMeId(null)
+    setProfileOpen(false)
+    setScreen('capture')
+  }
+
+  // Open a past bill from the Profile → Your bills history.
+  function openBill(id: string, memberId: string) {
+    setSessionId(id)
+    setMeId(memberId)
+    saveActiveSession({ sessionId: id, meId: memberId })
+    setProfileOpen(false)
+    setScreen('claim')
+  }
 
   const showTabs = screen !== 'landing'
+  const peopleCount = view?.members.length ?? 4
 
   return (
     /*
@@ -44,6 +97,10 @@ export function TabbyApp({
         'sm:border sm:border-[rgba(8,40,30,0.06)] sm:shadow-[0_20px_50px_-12px_rgba(8,40,30,0.28)]',
       )}
     >
+      {/* Invisible: links guest splits to the account on sign-in (no-op if
+          Clerk is unconfigured or the user is signed out). */}
+      <AccountLinker />
+
       {/* ── REGION 1: HEADER (flex-shrink:0, never scrolls) ── */}
       <div className="shrink-0">
         <header
@@ -54,11 +111,21 @@ export function TabbyApp({
         >
           <div className="flex items-center justify-between">
             <Wordmark className="text-xl text-receipt" />
-            {showTabs && (
-              <span className="font-mono text-xs text-receipt/70">
-                4 people
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {showTabs && (
+                <span className="font-mono text-xs text-receipt/70">
+                  {peopleCount} people
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setProfileOpen(true)}
+                aria-label="Profile, history and sign in"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-receipt/80 transition-colors hover:bg-receipt/10 hover:text-receipt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine"
+              >
+                <CircleUser className="h-[20px] w-[20px]" />
+              </button>
+            </div>
           </div>
         </header>
 
@@ -101,26 +168,53 @@ export function TabbyApp({
           <LandingScreen onStart={() => setScreen('capture')} />
         )}
         {screen === 'capture' && (
-          <CaptureScreen onStart={() => setShareOpen(true)} />
+          <CaptureScreen
+            sessionId={sessionId}
+            onSession={handleSession}
+            onStart={() => setShareOpen(true)}
+          />
         )}
-        {screen === 'claim' && <ClaimScreen />}
+        {screen === 'claim' && (
+          <ClaimScreen
+            sessionId={sessionId}
+            meId={meId}
+            view={view}
+            onClaimed={refresh}
+          />
+        )}
         {screen === 'settle' && (
-          <SettleScreen onNewSplit={() => setScreen('landing')} />
+          <SettleScreen
+            sessionId={sessionId}
+            meId={meId}
+            view={view}
+            onNewSplit={handleNewSplit}
+            onRefresh={refresh}
+          />
         )}
       </div>
 
       {/* ── REGION 3: FOOTER (flex-shrink:0, always visible) ── */}
-      {/* Only the Claim screen has a bottom bar; others render nothing here.     */}
+      {/* Claim + Settle each pin their primary action here, below the scroll. */}
       {screen === 'claim' && <ClaimFooter onSettle={() => setScreen('settle')} />}
+      {screen === 'settle' && <SettleFooter />}
 
       {/* ── OVERLAY: invite bottom sheet (slides over the dimmed receipt) ── */}
       <ShareSheet
         open={shareOpen}
+        sessionId={sessionId}
+        members={view?.members ?? null}
         onClose={() => setShareOpen(false)}
         onGoToReceipt={() => {
           setShareOpen(false)
           setScreen('claim')
         }}
+      />
+
+      <ProfileSheet
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        onOpenBill={openBill}
+        onNewSplit={handleNewSplit}
       />
     </main>
   )
@@ -160,6 +254,66 @@ function ClaimFooter({ onSettle }: { onSettle: () => void }) {
           className="rounded-full bg-tangerine px-7 py-3 font-semibold text-ink transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
         >
           Settle up
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/*
+ * SettleFooter mirrors ClaimFooter: a pinned bottom bar (outside the scroll
+ * zone) showing the outstanding total + a Copy-summary action. Fed by the
+ * `tabby:settle-summary` event from SettleScreen; hides itself until there are
+ * unpaid rows.
+ */
+function SettleFooter() {
+  const [summary, setSummary] = useState({
+    label: 'Still owed to you',
+    amount: 0,
+    text: '',
+    ready: false,
+  })
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    function handler(e: Event) {
+      const detail = (
+        e as CustomEvent<{
+          label: string
+          amount: number
+          text: string
+          ready: boolean
+        }>
+      ).detail
+      setSummary(detail)
+    }
+    window.addEventListener('tabby:settle-summary', handler)
+    return () => window.removeEventListener('tabby:settle-summary', handler)
+  }, [])
+
+  if (!summary.ready) return null
+
+  function copy() {
+    navigator.clipboard?.writeText(summary.text).catch(() => {})
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
+  }
+
+  return (
+    <div className="shrink-0 px-4 pb-4 pt-2">
+      <div className="flex items-center justify-between gap-4 rounded-2xl bg-ink/95 px-5 py-3 shadow-[0_-4px_20px_-6px_rgba(0,0,0,0.35)] backdrop-blur">
+        <div className="flex flex-col">
+          <span className="text-xs text-receipt/60">{summary.label}</span>
+          <span className="font-mono text-xl font-semibold tabular-nums text-receipt">
+            {formatMoney(summary.amount)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={copy}
+          className="rounded-full bg-tangerine px-7 py-3 font-semibold text-ink transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
+        >
+          {copied ? 'Copied' : 'Copy summary'}
         </button>
       </div>
     </div>

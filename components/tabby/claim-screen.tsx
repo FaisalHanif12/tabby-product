@@ -1,15 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Check } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ListChecks, Lock, ReceiptText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  INITIAL_ITEMS,
-  MEMBERS,
-  MEMBER_MAP,
-  MERCHANT,
-  TAX_RATE,
-  TIP_RATE,
   formatMoney,
   shareForMember,
   subtotalOf,
@@ -18,6 +12,7 @@ import {
 } from '@/lib/tabby-data'
 import type { SessionView } from '@/lib/types/tabby'
 import { setItemClaim } from '@/lib/api/tabby-client'
+import { reconcileSelfClaims, allClaimedBy } from '@/lib/domain/claims'
 import { ReceiptCard, ReceiptLine } from './receipt-card'
 import { MemberRoster, Avatar } from './member-avatars'
 
@@ -32,10 +27,10 @@ export function ClaimScreen({
   view?: SessionView | null
   onClaimed?: () => void
 } = {}) {
-  // Live mode requires a session that already has a persisted expense.
+  // Purely live: requires a session with a persisted expense. There is NO mock
+  // fallback — without a real receipt the screen shows an empty state.
   const live = Boolean(sessionId && view?.expense)
 
-  // Resolve the data source: live session view, or the local mock fixture.
   const sourceItems: LineItem[] = useMemo(() => {
     if (live && view) {
       return view.items.map((it) => ({
@@ -45,38 +40,51 @@ export function ClaimScreen({
         claimedBy: it.claimedBy,
       }))
     }
-    return INITIAL_ITEMS
+    return []
   }, [live, view])
 
-  const members: Member[] = live && view ? view.members : MEMBERS
+  const members: Member[] = live && view ? view.members : []
   const memberMap: Record<string, Member> = useMemo(() => {
     if (live && view) {
       return Object.fromEntries(view.members.map((m) => [m.id, m]))
     }
-    return MEMBER_MAP
+    return {}
   }, [live, view])
 
-  // "You" — the current member. Falls back to the mock 'you' id.
-  const selfId = live ? (meId ?? '') : 'you'
+  // "You" — the current member (empty until we have a live identity).
+  const selfId = meId ?? ''
+
+  // Once the host finalises ("Settle & lock"), claiming is frozen for everyone.
+  const locked = live && view?.meta?.status === 'settled'
 
   const tax = live && view?.expense ? view.expense.tax : 0
   const tip = live && view?.expense ? view.expense.tip : 0
-  const usingRates = !live
 
-  const merchant = live && view?.expense?.merchant ? view.expense.merchant : MERCHANT.name
-  const merchantDate = live ? undefined : MERCHANT.date
+  const merchant =
+    live && view?.expense?.merchant ? view.expense.merchant : undefined
   const expenseId = view?.expense?.id ?? null
 
   const [items, setItems] = useState<LineItem[]>(sourceItems)
 
-  // Reconcile local (optimistic) state with the latest polled data.
+  // The current user's in-flight claim intentions (itemId -> desired claimed).
+  // Protects rapid taps from being clobbered by the 3s poll before they persist.
+  const pendingRef = useRef<Map<string, boolean>>(new Map())
+
+  // Reconcile polled server data, but keep our own pending taps applied until
+  // the server reflects them (see reconcileSelfClaims).
   useEffect(() => {
-    setItems(sourceItems)
-  }, [sourceItems])
+    const { items: merged, settled } = reconcileSelfClaims(
+      sourceItems,
+      pendingRef.current,
+      selfId,
+    )
+    for (const id of settled) pendingRef.current.delete(id)
+    setItems(merged)
+  }, [sourceItems, selfId])
 
   const subtotal = useMemo(() => subtotalOf(items), [items])
-  const computedTax = usingRates ? subtotal * TAX_RATE : tax
-  const computedTip = usingRates ? subtotal * TIP_RATE : tip
+  const computedTax = tax
+  const computedTip = tip
   const total = subtotal + computedTax + computedTip
 
   const yourItemsTotal = useMemo(
@@ -84,7 +92,7 @@ export function ClaimScreen({
     [items, selfId],
   )
   const yourCount = items.filter((i) => i.claimedBy.includes(selfId)).length
-  const allClaimed = items.length > 0 && yourCount === items.length
+  const allMine = allClaimedBy(items, selfId)
 
   // Keep the lifted ClaimFooter in sync via a custom event
   useEffect(() => {
@@ -95,10 +103,25 @@ export function ClaimScreen({
     )
   }, [yourCount, yourItemsTotal])
 
+  /** Persist a single item's desired claimed-state, tracking it as pending. */
+  function writeClaim(id: string, desired: boolean) {
+    if (!(live && sessionId && expenseId && selfId)) return
+    pendingRef.current.set(id, desired)
+    void setItemClaim(
+      id,
+      { sessionId, expenseId, memberId: selfId },
+      desired,
+    ).then((res) => {
+      if (res.ok) onClaimed?.()
+      else pendingRef.current.delete(id) // failed — let the poll snap back
+    })
+  }
+
   function toggleClaim(id: string) {
+    if (locked) return
     const item = items.find((i) => i.id === id)
     if (!item) return
-    const mine = item.claimedBy.includes(selfId)
+    const desired = !item.claimedBy.includes(selfId)
 
     // Optimistic update first.
     setItems((prev) =>
@@ -106,48 +129,53 @@ export function ClaimScreen({
         if (it.id !== id) return it
         return {
           ...it,
-          claimedBy: mine
-            ? it.claimedBy.filter((m) => m !== selfId)
-            : [...it.claimedBy, selfId],
+          claimedBy: desired
+            ? [...it.claimedBy, selfId]
+            : it.claimedBy.filter((m) => m !== selfId),
         }
       }),
     )
 
-    // Reconcile with the server when live; mock mode stays local-only.
-    if (live && sessionId && expenseId && selfId) {
-      void setItemClaim(
-        id,
-        { sessionId, expenseId, memberId: selfId },
-        !mine,
-      ).then((res) => {
-        if (res.ok) onClaimed?.()
-      })
+    writeClaim(id, desired)
+  }
+
+  /** Claim every item for me at once — or clear them all if I already have all. */
+  function toggleClaimAll() {
+    if (locked) return
+    const desired = !allMine
+
+    setItems((prev) =>
+      prev.map((it) => ({
+        ...it,
+        claimedBy: desired
+          ? it.claimedBy.includes(selfId)
+            ? it.claimedBy
+            : [...it.claimedBy, selfId]
+          : it.claimedBy.filter((m) => m !== selfId),
+      })),
+    )
+
+    // Only write the items whose state actually changes.
+    for (const it of items) {
+      if (it.claimedBy.includes(selfId) !== desired) writeClaim(it.id, desired)
     }
   }
 
-  function toggleClaimAll() {
-    const claim = !allClaimed
-    // Optimistic: claim (or release) every item for the current member.
-    setItems((prev) =>
-      prev.map((it) => {
-        const mine = it.claimedBy.includes(selfId)
-        if (claim && !mine) return { ...it, claimedBy: [...it.claimedBy, selfId] }
-        if (!claim && mine)
-          return { ...it, claimedBy: it.claimedBy.filter((m) => m !== selfId) }
-        return it
-      }),
+  // Empty state: no receipt has been captured for this session yet.
+  if (!live) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center px-6 pb-10 pt-16 text-center">
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-spruce/10 text-spruce">
+          <ReceiptText className="h-7 w-7" />
+        </span>
+        <h1 className="mt-5 font-heading text-2xl font-bold text-ink">
+          Nothing to claim yet
+        </h1>
+        <p className="mt-1.5 text-sm text-muted-ink">
+          Capture a receipt first — then everyone taps the items they had.
+        </p>
+      </div>
     )
-
-    if (live && sessionId && expenseId && selfId) {
-      const targets = items.filter((it) =>
-        claim ? !it.claimedBy.includes(selfId) : it.claimedBy.includes(selfId),
-      )
-      Promise.all(
-        targets.map((it) =>
-          setItemClaim(it.id, { sessionId, expenseId, memberId: selfId }, claim),
-        ),
-      ).then(() => onClaimed?.())
-    }
   }
 
   return (
@@ -159,34 +187,44 @@ export function ClaimScreen({
         <p className="mt-1 text-sm text-muted-ink">
           Claim your items — share a dish by tapping it together.
         </p>
+
+        {locked && (
+          <div className="mt-4 flex items-center gap-2 rounded-2xl border border-hairline bg-receipt px-4 py-2.5 text-sm font-medium text-muted-ink">
+            <Lock className="h-4 w-4 shrink-0 text-spruce" />
+            This split is settled and locked — items can&apos;t be changed.
+          </div>
+        )}
+
         <div className="mt-5 flex justify-center">
           <MemberRoster members={members} activeId={selfId} />
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl bg-secondary/70 px-4 py-2.5">
-          <p className="text-xs leading-snug text-muted-ink">
-            Tap the items you had — or claim them all.
-          </p>
-          <button
-            type="button"
-            onClick={toggleClaimAll}
-            aria-pressed={allClaimed}
-            className={cn(
-              'shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
-              allClaimed
-                ? 'bg-tangerine text-ink'
-                : 'border border-tangerine/40 text-tangerine hover:bg-tangerine/10',
-            )}
-          >
-            {allClaimed ? 'Claimed all' : 'Claim all'}
-          </button>
-        </div>
+        {!locked && (
+          <div className="mt-5 flex items-center justify-between gap-3 rounded-2xl bg-secondary/70 px-4 py-2.5">
+            <p className="text-xs leading-snug text-muted-ink">
+              Tap the items you had — or claim them all.
+            </p>
+            <button
+              type="button"
+              onClick={toggleClaimAll}
+              aria-pressed={allMine}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
+                allMine
+                  ? 'bg-tangerine text-ink'
+                  : 'border border-tangerine/40 text-tangerine hover:bg-tangerine/10',
+              )}
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              {allMine ? 'Clear all' : 'Claim all'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="px-4 pt-6">
         <ReceiptCard
           merchant={merchant}
-          date={merchantDate}
           className="mx-auto max-w-md rounded-[20px]"
         >
           <ul className="mt-6 flex flex-col">
@@ -199,10 +237,12 @@ export function ClaimScreen({
                     type="button"
                     onClick={() => toggleClaim(item.id)}
                     aria-pressed={mine}
+                    disabled={locked}
                     className={cn(
                       'flex min-h-[56px] w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-receipt',
-                      mine ? 'bg-tangerine/12' : 'hover:bg-leader/25',
+                      mine ? 'bg-tangerine/12' : !locked && 'hover:bg-leader/25',
+                      locked && 'cursor-default',
                     )}
                   >
                     <span
@@ -257,7 +297,7 @@ export function ClaimScreen({
             <ReceiptLine label="Subtotal" value={formatMoney(subtotal)} />
             <ReceiptLine label="Tax" value={formatMoney(computedTax)} />
             <ReceiptLine
-              label={usingRates ? 'Tip (18%)' : 'Tip'}
+              label="Tip"
               value={formatMoney(computedTip)}
             />
             <div className="mt-2">

@@ -25,6 +25,9 @@ export async function POST(
   try {
     const view = await getSessionView(id)
     if (!view.meta) return fail('Session not found', 404)
+    if (view.meta.status === 'settled') {
+      return fail('This split is settled and locked', 409)
+    }
 
     const expense = await createExpense(id, {
       merchant: data.merchant ?? null,

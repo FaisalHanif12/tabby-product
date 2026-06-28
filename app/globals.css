@@ -186,7 +186,11 @@
     overflow: hidden;
   }
   body {
-    @apply bg-canvas text-foreground font-sans;
+    @apply text-foreground font-sans;
+    /* The whole document carries the page gradient (fixed), so there is never a
+       differently-coloured strip below the content — the background is uniform
+       top-to-bottom regardless of window height. */
+    background: linear-gradient(to bottom, #eef2ef 0%, #e7ede9 100%) fixed;
     height: 100%;
     overflow: hidden;
   }
@@ -365,4 +369,14 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* ── Clerk sign-in/up modal — shrink it to fit Tabby's 390px mobile frame ──
+ * Clerk renders the modal centered on the viewport, wider than our frame. We
+ * scale the WHOLE modal box down as a single unit (transform), which keeps the
+ * card and its footer perfectly aligned — unlike width overrides, which detach
+ * Clerk's internal pieces. */
+.cl-modalContent {
+  transform: scale(0.82);
+  transform-origin: center center;
 }
