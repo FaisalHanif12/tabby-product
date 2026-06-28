@@ -1,15 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, ReceiptText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  INITIAL_ITEMS,
-  MEMBERS,
-  MEMBER_MAP,
-  MERCHANT,
-  TAX_RATE,
-  TIP_RATE,
   formatMoney,
   shareForMember,
   subtotalOf,
@@ -32,10 +26,10 @@ export function ClaimScreen({
   view?: SessionView | null
   onClaimed?: () => void
 } = {}) {
-  // Live mode requires a session that already has a persisted expense.
+  // Purely live: requires a session with a persisted expense. There is NO mock
+  // fallback — without a real receipt the screen shows an empty state.
   const live = Boolean(sessionId && view?.expense)
 
-  // Resolve the data source: live session view, or the local mock fixture.
   const sourceItems: LineItem[] = useMemo(() => {
     if (live && view) {
       return view.items.map((it) => ({
@@ -45,26 +39,25 @@ export function ClaimScreen({
         claimedBy: it.claimedBy,
       }))
     }
-    return INITIAL_ITEMS
+    return []
   }, [live, view])
 
-  const members: Member[] = live && view ? view.members : MEMBERS
+  const members: Member[] = live && view ? view.members : []
   const memberMap: Record<string, Member> = useMemo(() => {
     if (live && view) {
       return Object.fromEntries(view.members.map((m) => [m.id, m]))
     }
-    return MEMBER_MAP
+    return {}
   }, [live, view])
 
-  // "You" — the current member. Falls back to the mock 'you' id.
-  const selfId = live ? (meId ?? '') : 'you'
+  // "You" — the current member (empty until we have a live identity).
+  const selfId = meId ?? ''
 
   const tax = live && view?.expense ? view.expense.tax : 0
   const tip = live && view?.expense ? view.expense.tip : 0
-  const usingRates = !live
 
-  const merchant = live && view?.expense?.merchant ? view.expense.merchant : MERCHANT.name
-  const merchantDate = live ? undefined : MERCHANT.date
+  const merchant =
+    live && view?.expense?.merchant ? view.expense.merchant : undefined
   const expenseId = view?.expense?.id ?? null
 
   const [items, setItems] = useState<LineItem[]>(sourceItems)
@@ -75,8 +68,8 @@ export function ClaimScreen({
   }, [sourceItems])
 
   const subtotal = useMemo(() => subtotalOf(items), [items])
-  const computedTax = usingRates ? subtotal * TAX_RATE : tax
-  const computedTip = usingRates ? subtotal * TIP_RATE : tip
+  const computedTax = tax
+  const computedTip = tip
   const total = subtotal + computedTax + computedTip
 
   const yourItemsTotal = useMemo(
@@ -124,6 +117,23 @@ export function ClaimScreen({
     }
   }
 
+  // Empty state: no receipt has been captured for this session yet.
+  if (!live) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center px-6 pb-10 pt-16 text-center">
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-spruce/10 text-spruce">
+          <ReceiptText className="h-7 w-7" />
+        </span>
+        <h1 className="mt-5 font-heading text-2xl font-bold text-ink">
+          Nothing to claim yet
+        </h1>
+        <p className="mt-1.5 text-sm text-muted-ink">
+          Capture a receipt first — then everyone taps the items they had.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="px-5 pt-4">
@@ -141,7 +151,6 @@ export function ClaimScreen({
       <div className="px-4 pt-6">
         <ReceiptCard
           merchant={merchant}
-          date={merchantDate}
           className="mx-auto max-w-md rounded-[20px]"
         >
           <ul className="mt-6 flex flex-col">
@@ -212,7 +221,7 @@ export function ClaimScreen({
             <ReceiptLine label="Subtotal" value={formatMoney(subtotal)} />
             <ReceiptLine label="Tax" value={formatMoney(computedTax)} />
             <ReceiptLine
-              label={usingRates ? 'Tip (18%)' : 'Tip'}
+              label="Tip"
               value={formatMoney(computedTip)}
             />
             <div className="mt-2">

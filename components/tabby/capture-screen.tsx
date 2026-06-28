@@ -1,8 +1,12 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Camera, Plus, Trash2 } from 'lucide-react'
-import { MERCHANT, PARSED_ITEMS, formatMoney } from '@/lib/tabby-data'
+import { formatMoney } from '@/lib/tabby-data'
+
+// Neutral skeleton rows shown while the real receipt is being read — varied
+// widths for a realistic shimmer, with NO placeholder merchant or items.
+const SKELETON_ROWS = ['w-40', 'w-28', 'w-36', 'w-24', 'w-32']
 import {
   createSession,
   presignUpload,
@@ -29,10 +33,20 @@ export function CaptureScreen({
   const [merchant, setMerchant] = useState<string | null>(null)
   const [tax, setTax] = useState('0.00')
   const [tip, setTip] = useState('0.00')
+  // Object URL of the actual uploaded image, shown (with the scan-line) while
+  // the real receipt is being read.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   // Holds the session id synchronously within the scan pipeline (the lifted
   // sessionId prop may not have re-rendered yet when "Start splitting" fires).
   const liveSessionId = useRef<string | null>(null)
+
+  // Revoke the preview object URL when it changes or on unmount (no leaks).
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   function handleScan() {
     fileRef.current?.click()
@@ -54,6 +68,11 @@ export function CaptureScreen({
     e.target.value = '' // allow re-selecting the same file later
     if (!file) return
 
+    // Show the real receipt the user just picked while we read it.
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
     setScanning(true)
 
     const created = await createSession()
@@ -142,27 +161,35 @@ export function CaptureScreen({
           </p>
         </div>
 
-        <div className="relative mt-6 overflow-hidden rounded-[20px]">
-          <ReceiptCard
-            merchant={MERCHANT.name}
-            date={MERCHANT.date}
-            className="mx-auto max-w-md rounded-[20px]"
-          >
-            <ul className="mt-6 flex flex-col gap-3">
-              {PARSED_ITEMS.map((item, i) => (
-                <li
-                  key={item.id}
-                  className="shimmer-row flex items-center justify-between gap-3"
-                  style={{ animationDelay: `${i * 0.18}s` }}
-                >
-                  <span className="font-medium text-ink">{item.label}</span>
-                  <span className="font-mono tabular-nums text-ink">
-                    {formatMoney(item.price)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </ReceiptCard>
+        <div className="relative mx-auto mt-6 max-w-md overflow-hidden rounded-[20px]">
+          {previewUrl ? (
+            // The actual uploaded receipt, with the scan-line sweeping over it.
+            <div className="overflow-hidden rounded-[20px] border border-hairline bg-receipt shadow-[0_16px_40px_-20px_rgba(11,83,65,0.28)]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewUrl}
+                alt="Your receipt, being scanned"
+                className="max-h-[420px] w-full object-contain"
+              />
+            </div>
+          ) : (
+            <ReceiptCard className="rounded-[20px]">
+              <ul className="mt-6 flex flex-col gap-4">
+                {SKELETON_ROWS.map((width, i) => (
+                  <li
+                    key={i}
+                    className="shimmer-row flex items-center justify-between gap-3"
+                    style={{ animationDelay: `${i * 0.18}s` }}
+                  >
+                    <span
+                      className={`h-3.5 rounded-full bg-leader/60 ${width}`}
+                    />
+                    <span className="h-3.5 w-12 rounded-full bg-leader/60" />
+                  </li>
+                ))}
+              </ul>
+            </ReceiptCard>
+          )}
           {/* tangerine scan-line sweeping over the receipt */}
           <span className="scan-line" aria-hidden="true" />
         </div>

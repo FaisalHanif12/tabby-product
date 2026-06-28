@@ -37,6 +37,8 @@ export function ShareSheet({
         ? `/s/${sessionId}/join`
         : SHARE_LINK
 
+  // Live members when we have a session (even an empty list — no mock flash);
+  // only the truly session-less demo falls back to JOINED_MEMBERS.
   const joined =
     members && members.length > 0
       ? members.map((m) => ({
@@ -44,7 +46,9 @@ export function ShareSheet({
           initials: m.initials,
           color: m.color,
         }))
-      : JOINED_MEMBERS
+      : sessionId
+        ? []
+        : JOINED_MEMBERS
 
   function copyLink() {
     navigator.clipboard?.writeText(shareUrl).catch(() => {})
