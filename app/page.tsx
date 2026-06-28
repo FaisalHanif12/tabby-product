@@ -6,12 +6,16 @@ const VALID: Screen[] = ['landing', 'capture', 'claim', 'settle']
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ screen?: string }>
+  searchParams: Promise<{ screen?: string; s?: string; m?: string }>
 }) {
-  const { screen } = await searchParams
+  const { screen, s, m } = await searchParams
   const initialScreen = (
     VALID.includes(screen as Screen) ? screen : 'landing'
   ) as Screen
+
+  // Optional deep-link session (e.g. opening a past split from /history).
+  const initialSessionId = typeof s === 'string' && s ? s : null
+  const initialMeId = typeof m === 'string' && m ? m : null
 
   return (
     <div
@@ -21,7 +25,11 @@ export default async function Home({
           'linear-gradient(to bottom, #EEF2EF 0%, #E7EDE9 100%)',
       }}
     >
-      <TabbyApp initialScreen={initialScreen} />
+      <TabbyApp
+        initialScreen={initialScreen}
+        initialSessionId={initialSessionId}
+        initialMeId={initialMeId}
+      />
     </div>
   )
 }

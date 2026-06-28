@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Tabby — Terraform variables (EXAMPLE)
+#
+# Copy this file to terraform.tfvars and fill in your real values:
+#     cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is gitignored — never commit real values. Commit only this
+# .example. No static AWS credentials live here or anywhere in this config.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# AWS region for the table + bucket. Use the SAME value for AWS_REGION in Vercel.
+aws_region = "us-east-1"
+
+# DynamoDB table name (the app's TABLE_NAME). Default is "Tabby" if omitted.
+table_name = "Tabby"
+
+# S3 bucket for receipt images. MUST be globally unique across all of AWS —
+# pick something namespaced, e.g. "tabby-receipts-<your-org>-prod".
+bucket_name = "tabby-receipts-CHANGE-ME"
+
+# Name for the IAM role Vercel assumes. Default "tabby-vercel-oidc" if omitted.
+# role_name = "tabby-vercel-oidc"
+
+# ── Vercel OIDC ──────────────────────────────────────────────────────────────
+
+# Your Vercel team slug — the path in your team URL: vercel.com/<team-slug>.
+vercel_team_slug = "your-team-slug"
+
+# Your Vercel project name (as shown in the project settings / URL).
+vercel_project_name = "tabby-product"
+
+# Issuer mode: "team" (default, recommended) or "global". Confirm under
+# Vercel → Settings → Secure Backend Access. Leave as "team" unless your team
+# is explicitly on the global issuer.
+# vercel_issuer_mode = "team"
+
+# Deployment environment the role is allowed for. Keep "production".
+# vercel_environment = "production"
+
+# ── CORS origins for browser uploads ─────────────────────────────────────────
+# MUST include your production domain AND http://localhost:3000 for local dev,
+# or browser PUT uploads fail silently. Add custom/preview domains as needed.
+allowed_origins = [
+  "https://tabby-product.vercel.app",
+  "http://localhost:3000",
+]

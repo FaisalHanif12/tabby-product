@@ -4,6 +4,14 @@ import { useEffect, useState } from 'react'
 import { Camera, ReceiptText, HandCoins } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/tabby-data'
+import { useSession } from '@/lib/hooks/use-session'
+import {
+  loadActiveSession,
+  saveActiveSession,
+  clearActiveSession,
+} from '@/lib/session-store'
+import { AuthButton } from '@/components/auth/auth-button'
+import { AccountLinker } from '@/components/auth/account-linker'
 import { Wordmark } from './wordmark'
 import { LandingScreen } from './landing-screen'
 import { CaptureScreen } from './capture-screen'
@@ -21,13 +29,52 @@ const TABS: { id: Screen; label: string; icon: typeof Camera }[] = [
 
 export function TabbyApp({
   initialScreen = 'landing',
+  initialSessionId = null,
+  initialMeId = null,
 }: {
   initialScreen?: Screen
+  /** Deep-link session (e.g. opening a split from /history): ?s=&m=. */
+  initialSessionId?: string | null
+  initialMeId?: string | null
 }) {
   const [screen, setScreen] = useState<Screen>(initialScreen)
   const [shareOpen, setShareOpen] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(initialSessionId)
+  const [meId, setMeId] = useState<string | null>(initialMeId)
+
+  // Resolve the active session. An explicit deep-link (?s=&m=, e.g. from the
+  // history list) wins and is persisted; otherwise pick up a session created or
+  // joined elsewhere (a guest routed here from /s/[id]/join). Falls back to mock.
+  useEffect(() => {
+    if (initialSessionId && initialMeId) {
+      saveActiveSession({ sessionId: initialSessionId, meId: initialMeId })
+      return
+    }
+    const active = loadActiveSession()
+    if (active) {
+      setSessionId(active.sessionId)
+      setMeId(active.meId)
+    }
+  }, [initialSessionId, initialMeId])
+
+  // Live polling (pauses on tab-hidden, see use-session.ts). Null id => no-op.
+  const { view, refresh } = useSession(sessionId)
+
+  function handleSession(id: string, memberId: string) {
+    setSessionId(id)
+    setMeId(memberId)
+    saveActiveSession({ sessionId: id, meId: memberId })
+  }
+
+  function handleNewSplit() {
+    clearActiveSession()
+    setSessionId(null)
+    setMeId(null)
+    setScreen('landing')
+  }
 
   const showTabs = screen !== 'landing'
+  const peopleCount = view?.members.length ?? 4
 
   return (
     /*
@@ -44,6 +91,10 @@ export function TabbyApp({
         'sm:border sm:border-[rgba(8,40,30,0.06)] sm:shadow-[0_20px_50px_-12px_rgba(8,40,30,0.28)]',
       )}
     >
+      {/* Invisible: links guest splits to the account on sign-in (no-op if
+          Clerk is unconfigured or the user is signed out). */}
+      <AccountLinker />
+
       {/* ── REGION 1: HEADER (flex-shrink:0, never scrolls) ── */}
       <div className="shrink-0">
         <header
@@ -54,11 +105,14 @@ export function TabbyApp({
         >
           <div className="flex items-center justify-between">
             <Wordmark className="text-xl text-receipt" />
-            {showTabs && (
-              <span className="font-mono text-xs text-receipt/70">
-                4 people
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {showTabs && (
+                <span className="font-mono text-xs text-receipt/70">
+                  {peopleCount} people
+                </span>
+              )}
+              <AuthButton />
+            </div>
           </div>
         </header>
 
@@ -101,11 +155,26 @@ export function TabbyApp({
           <LandingScreen onStart={() => setScreen('capture')} />
         )}
         {screen === 'capture' && (
-          <CaptureScreen onStart={() => setShareOpen(true)} />
+          <CaptureScreen
+            sessionId={sessionId}
+            onSession={handleSession}
+            onStart={() => setShareOpen(true)}
+          />
         )}
-        {screen === 'claim' && <ClaimScreen />}
+        {screen === 'claim' && (
+          <ClaimScreen
+            sessionId={sessionId}
+            meId={meId}
+            view={view}
+            onClaimed={refresh}
+          />
+        )}
         {screen === 'settle' && (
-          <SettleScreen onNewSplit={() => setScreen('landing')} />
+          <SettleScreen
+            sessionId={sessionId}
+            view={view}
+            onNewSplit={handleNewSplit}
+          />
         )}
       </div>
 
@@ -116,6 +185,8 @@ export function TabbyApp({
       {/* ── OVERLAY: invite bottom sheet (slides over the dimmed receipt) ── */}
       <ShareSheet
         open={shareOpen}
+        sessionId={sessionId}
+        members={view?.members ?? null}
         onClose={() => setShareOpen(false)}
         onGoToReceipt={() => {
           setShareOpen(false)

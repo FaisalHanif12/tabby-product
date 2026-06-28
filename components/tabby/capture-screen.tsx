@@ -1,47 +1,114 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Camera, Plus, Trash2 } from 'lucide-react'
+import { MERCHANT, PARSED_ITEMS, formatMoney } from '@/lib/tabby-data'
 import {
-  MERCHANT,
-  PARSED_ITEMS,
-  TAX_RATE,
-  TIP_RATE,
-  formatMoney,
-} from '@/lib/tabby-data'
+  createSession,
+  presignUpload,
+  uploadToS3,
+  parseReceipt,
+  createExpense,
+} from '@/lib/api/tabby-client'
 import { ReceiptCard } from './receipt-card'
 
 type EditItem = { id: string; label: string; price: string }
 
-export function CaptureScreen({ onStart }: { onStart: () => void }) {
+export function CaptureScreen({
+  sessionId,
+  onSession,
+  onStart,
+}: {
+  sessionId: string | null
+  onSession: (sessionId: string, meId: string) => void
+  onStart: () => void
+}) {
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [items, setItems] = useState<EditItem[]>([])
+  const [merchant, setMerchant] = useState<string | null>(null)
   const [tax, setTax] = useState('0.00')
   const [tip, setTip] = useState('0.00')
+  const fileRef = useRef<HTMLInputElement>(null)
+  // Holds the session id synchronously within the scan pipeline (the lifted
+  // sessionId prop may not have re-rendered yet when "Start splitting" fires).
+  const liveSessionId = useRef<string | null>(null)
 
   function handleScan() {
-    setScanning(true)
+    fileRef.current?.click()
   }
 
-  // Mock OCR: after a short scan, populate the editable review.
-  useEffect(() => {
-    if (!scanning) return
-    const timer = setTimeout(() => {
-      const parsed = PARSED_ITEMS.map((p) => ({
-        id: p.id,
-        label: p.label,
-        price: p.price.toFixed(2),
-      }))
-      const sub = PARSED_ITEMS.reduce((s, p) => s + p.price, 0)
-      setItems(parsed)
-      setTax((sub * TAX_RATE).toFixed(2))
-      setTip((sub * TIP_RATE).toFixed(2))
-      setScanned(true)
-      setScanning(false)
-    }, 2000)
-    return () => clearTimeout(timer)
-  }, [scanning])
+  // Drop the user into a blank, editable receipt — the flow never dead-ends.
+  function fallbackToEmpty() {
+    setItems([])
+    setMerchant(null)
+    setTax('0.00')
+    setTip('0.00')
+    setScanned(true)
+    setScanning(false)
+  }
+
+  // Real pipeline: create session -> presign -> PUT to S3 -> OCR parse.
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file later
+    if (!file) return
+
+    setScanning(true)
+
+    const created = await createSession()
+    if (!created.ok) return fallbackToEmpty()
+    const sid = created.data.id
+    liveSessionId.current = sid
+    onSession(sid, created.data.hostMemberId)
+
+    const presign = await presignUpload({
+      sessionId: sid,
+      contentType: file.type,
+      size: file.size,
+    })
+    if (!presign.ok) return fallbackToEmpty()
+
+    const uploaded = await uploadToS3(presign.data.uploadUrl, file)
+    if (!uploaded) return fallbackToEmpty()
+
+    const parsed = await parseReceipt(sid, presign.data.objectKey)
+    if (!parsed.ok) return fallbackToEmpty()
+
+    const receipt = parsed.data.receipt
+    setMerchant(receipt.merchant)
+    setItems(
+      receipt.items.map((it, i) => ({
+        id: `p${i}`,
+        label: it.label,
+        price: (it.unitPrice * (it.qty || 1)).toFixed(2),
+      })),
+    )
+    setTax((receipt.tax ?? 0).toFixed(2))
+    setTip((receipt.tip ?? 0).toFixed(2))
+    setScanned(true)
+    setScanning(false)
+  }
+
+  // "Start splitting": persist the reviewed receipt as the session's expense,
+  // then continue to the invite sheet. If there's no live session (offline /
+  // fallback), proceed anyway so the mock demo path stays intact.
+  async function handleStart() {
+    const sid = sessionId ?? liveSessionId.current
+    if (sid && items.length > 0) {
+      await createExpense(sid, {
+        merchant,
+        items: items.map((it) => ({
+          label: it.label.trim() || 'Item',
+          qty: 1,
+          unitPrice: Number(it.price) || 0,
+        })),
+        tax: Number(tax) || 0,
+        tip: Number(tip) || 0,
+      })
+    }
+    onStart()
+  }
 
   function updateItem(id: string, field: 'label' | 'price', value: string) {
     setItems((prev) =>
@@ -121,6 +188,14 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
           Start by snapping the receipt — we&apos;ll pull out the items.
         </p>
 
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={handleFile}
+        />
         <button
           type="button"
           onClick={handleScan}
@@ -220,7 +295,7 @@ export function CaptureScreen({ onStart }: { onStart: () => void }) {
         <div className="mx-auto mt-6 max-w-md">
           <button
             type="button"
-            onClick={onStart}
+            onClick={handleStart}
             className="w-full rounded-full bg-tangerine px-7 py-4 text-base font-semibold text-ink shadow-[0_12px_28px_-12px_rgba(255,138,43,0.7)] transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-canvas"
           >
             Start splitting

@@ -5,8 +5,7 @@ export default async function JoinPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  // id identifies the split session in a real app; mock flow ignores it.
-  await params
+  const { id } = await params
 
   return (
     <div
@@ -15,7 +14,7 @@ export default async function JoinPage({
         background: 'linear-gradient(to bottom, #EEF2EF 0%, #E7EDE9 100%)',
       }}
     >
-      <JoinFlow />
+      <JoinFlow sessionId={id} />
     </div>
   )
 }

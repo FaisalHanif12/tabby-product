@@ -69,3 +69,53 @@ export interface SessionView {
   expense: Expense | null
   items: SessionItem[]
 }
+
+/* ── Optional auth: profile, payment handle, saved history ──────────────────
+ * These power the signed-in experience and are entirely additive — the
+ * anonymous flow never reads or writes any of them.
+ */
+
+export type PaymentProvider = 'venmo' | 'cashapp' | 'paypal'
+
+export interface PaymentHandle {
+  provider: PaymentProvider
+  /** The username only — no '@', no URL. e.g. "jane-doe". */
+  username: string
+}
+
+/** A signed-in user's personalization record: PK=USER#<userId> SK=PROFILE. */
+export interface UserProfile {
+  userId: string
+  displayName: string | null
+  paymentHandle: PaymentHandle | null
+  avatarUrl: string | null
+  updatedAt: number
+}
+
+/**
+ * A USERLINK row ties a guest member (memberId within a session) to a signed-in
+ * Clerk userId. Carries a denormalized snapshot so history renders from a single
+ * GSI1 query, and is enriched with live data when the session still exists.
+ */
+export interface UserSplitLink {
+  userId: string
+  sessionId: string
+  memberId: string
+  createdAt: number
+  merchant: string | null
+  total: number
+  share: number
+  status: SessionStatus
+}
+
+/** One row in the signed-in /history list. */
+export interface HistoryEntry {
+  sessionId: string
+  title: string
+  total: number
+  yourShare: number
+  status: SessionStatus
+  createdAt: number
+  /** Deep link back into this split's settle view. */
+  href: string
+}

@@ -1,5 +1,9 @@
 import { ok, fail, serverError } from '@/lib/api/respond'
-import { getSessionView, recordSettlement } from '@/lib/db/repository'
+import {
+  getSessionView,
+  recordSettlement,
+  getPayerPaymentHandle,
+} from '@/lib/db/repository'
 import { isSessionHost } from '@/lib/auth/guards'
 import { splitBill } from '@/lib/domain/split'
 import { settleUp } from '@/lib/domain/settle'
@@ -46,11 +50,21 @@ export async function GET(
   try {
     const computed = await computeSettlement(id)
     if (!computed) return fail('Session not found', 404)
+
+    // If the payer is a signed-in user with a saved handle, surface it so the
+    // client can prefill the "Pay" deep links. Null for anonymous payers — the
+    // settle screen falls back to its plain button. Never blocks settlement.
+    const payerId = computed.view.meta!.payerId
+    const payerHandle = await getPayerPaymentHandle(id, payerId).catch(
+      () => null,
+    )
+
     return ok({
-      payerId: computed.view.meta!.payerId,
+      payerId,
       members: computed.view.members,
       split: computed.split,
       settle: computed.settle,
+      payerHandle,
     })
   } catch (err) {
     return serverError('GET /api/sessions/[id]/settle', err)
