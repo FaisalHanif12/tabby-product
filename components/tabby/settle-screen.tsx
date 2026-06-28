@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Copy, HandCoins } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Check, HandCoins } from 'lucide-react'
 import { formatMoney, type SettleRow } from '@/lib/tabby-data'
 import type { PaymentHandle, SessionView } from '@/lib/types/tabby'
 import { getSettlement, settleSession } from '@/lib/api/tabby-client'
@@ -18,11 +17,10 @@ export function SettleScreen({
   view?: SessionView | null
   onNewSplit: () => void
 }) {
-  // Purely live: no mock settlement. Without an active split we show an empty
-  // state instead of placeholder amounts.
-  const live = Boolean(sessionId)
+  // Purely live and only once an expense exists (mirrors Claim). Without a real
+  // split we show an empty state — and never POST /settle (which would 409).
+  const live = Boolean(sessionId && view?.expense)
   const [rows, setRows] = useState<SettleRow[]>([])
-  const [copied, setCopied] = useState(false)
   // The payer's saved payment handle (when they're a signed-in user). Prefills
   // every "Pay" deep link; null falls back to the plain button.
   const [payerHandle, setPayerHandle] = useState<PaymentHandle | null>(null)
@@ -72,18 +70,26 @@ export function SettleScreen({
     )
   }
 
-  function copySummary() {
+  // Feed the lifted SettleFooter (outside the scroll zone) so the action stays
+  // pinned at the bottom — same pattern as the Claim footer. The event carries
+  // the copy text so the footer needs no back-channel.
+  useEffect(() => {
     const lines = rows.map(
       (r) =>
         `${r.member.name} owes you ${formatMoney(r.amount)}${
           r.paid ? ' (paid)' : ''
         }`,
     )
-    const text = `Tabby · ${merchantName}\n${lines.join('\n')}`
-    navigator.clipboard?.writeText(text).catch(() => {})
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1800)
-  }
+    window.dispatchEvent(
+      new CustomEvent('tabby:settle-summary', {
+        detail: {
+          outstanding,
+          text: `Tabby · ${merchantName}\n${lines.join('\n')}`,
+          ready: rows.length > 0 && !allSettled,
+        },
+      }),
+    )
+  }, [rows, merchantName, outstanding, allSettled])
 
   // Empty state: no active split to settle yet.
   if (!live) {
@@ -143,13 +149,6 @@ export function SettleScreen({
       <p className="mt-1 text-sm text-muted-ink">
         You covered {merchantName}. Here&apos;s who owes you.
       </p>
-
-      <div className="mt-5 rounded-2xl bg-spruce px-5 py-4 shadow-[0_16px_40px_-22px_rgba(11,83,65,0.55)]">
-        <span className="text-xs text-receipt/70">Still owed to you</span>
-        <div className="font-mono text-3xl font-bold tabular-nums text-receipt">
-          {formatMoney(outstanding)}
-        </div>
-      </div>
 
       <ul className="mt-6 flex flex-col gap-3">
         {rows.map((row) => (
@@ -220,26 +219,6 @@ export function SettleScreen({
           </li>
         ))}
       </ul>
-
-      <button
-        type="button"
-        onClick={copySummary}
-        className={cn(
-          'mt-6 flex w-full items-center justify-center gap-2 rounded-full border border-hairline bg-receipt px-5 py-3.5 font-semibold text-ink shadow-[0_10px_24px_-18px_rgba(11,83,65,0.4)] transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine',
-        )}
-      >
-        {copied ? (
-          <>
-            <Check className="h-4 w-4" strokeWidth={2.5} />
-            Copied summary
-          </>
-        ) : (
-          <>
-            <Copy className="h-4 w-4" />
-            Copy summary
-          </>
-        )}
-      </button>
     </div>
   )
 }
