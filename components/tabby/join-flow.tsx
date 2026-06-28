@@ -16,8 +16,13 @@ export function JoinFlow({ sessionId }: { sessionId: string }) {
   async function handleJoin(name: string) {
     const res = await joinSession(sessionId, name)
     if (res.ok) {
-      saveActiveSession({ sessionId, meId: res.data.member.id })
-      addBill({ sessionId, meId: res.data.member.id })
+      const meId = res.data.member.id
+      saveActiveSession({ sessionId, meId })
+      addBill({ sessionId, meId })
+      // Carry identity in the URL so the claim screen opens this split directly
+      // (the app no longer auto-resumes from storage on a fresh load).
+      router.push(`/?screen=claim&s=${sessionId}&m=${meId}`)
+      return
     }
     router.push('/?screen=claim')
   }

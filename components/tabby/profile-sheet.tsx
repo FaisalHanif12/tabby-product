@@ -1,11 +1,22 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Trash2, X, ReceiptText } from 'lucide-react'
+import Link from 'next/link'
+import {
+  Plus,
+  Trash2,
+  X,
+  ReceiptText,
+  UserRound,
+  LogOut,
+  ChevronRight,
+} from 'lucide-react'
+import { SignInButton, SignOutButton, useUser } from '@clerk/nextjs'
 import { formatMoney } from '@/lib/tabby-data'
 import type { SessionStatus } from '@/lib/types/tabby'
 import { getSession, deleteSession } from '@/lib/api/tabby-client'
 import { listBills, removeBill, type StoredBill } from '@/lib/session-store'
+import { clerkEnabled } from '@/lib/auth/clerk-flags'
 
 type BillView = StoredBill & {
   merchant: string | null
@@ -20,10 +31,12 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 }
 
 /**
- * Device-local "My bills" — every split this browser created or joined. Tap one
- * to reopen it, or delete it. No account needed (separate from Clerk history).
+ * Profile menu: the single header entry point. Holds the Account section
+ * (Clerk sign-in / account when configured) and the device-local bill History.
+ * Always available — the History + "new split" work without an account; sign-in
+ * adds cross-device sync.
  */
-export function BillsSheet({
+export function ProfileSheet({
   open,
   onClose,
   onOpenBill,
@@ -75,7 +88,7 @@ export function BillsSheet({
       className="absolute inset-0 z-40 flex flex-col justify-end"
       role="dialog"
       aria-modal="true"
-      aria-label="Your bills"
+      aria-label="Profile"
     >
       <button
         type="button"
@@ -96,11 +109,14 @@ export function BillsSheet({
           <X className="h-4 w-4" />
         </button>
 
-        <h2 className="font-heading text-2xl font-bold text-ink">Your bills</h2>
-        <p className="mt-1 text-sm text-muted-ink">
-          Splits on this device. Tap to reopen, or delete.
-        </p>
+        <h2 className="font-heading text-2xl font-bold text-ink">Profile</h2>
 
+        {/* ── Account ── */}
+        <div className="mt-4">
+          <AccountSection />
+        </div>
+
+        {/* ── New split ── */}
         <button
           type="button"
           onClick={onNewSplit}
@@ -110,7 +126,13 @@ export function BillsSheet({
           Start a new split
         </button>
 
-        <div className="mt-5">
+        {/* ── History ── */}
+        <h3 className="mt-6 text-sm font-semibold text-ink">Your bills</h3>
+        <p className="mt-0.5 text-xs text-muted-ink">
+          Splits on this device. Tap to reopen, or delete.
+        </p>
+
+        <div className="mt-3">
           {bills === null ? (
             <p className="py-6 text-center text-sm text-muted-ink">Loading…</p>
           ) : bills.length === 0 ? (
@@ -174,6 +196,100 @@ export function BillsSheet({
             </ul>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Account section: Clerk sign-in / account, gated by clerkEnabled ── */
+
+function AccountSection() {
+  if (!clerkEnabled) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-hairline bg-receipt px-4 py-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-spruce/10 text-spruce">
+          <UserRound className="h-5 w-5" />
+        </span>
+        <p className="text-sm text-muted-ink">
+          Sign in to sync your bills across devices.
+        </p>
+      </div>
+    )
+  }
+  return <AccountSectionInner />
+}
+
+// Only rendered when clerkEnabled (so ClerkProvider is present in the tree).
+function AccountSectionInner() {
+  const { isLoaded, isSignedIn, user } = useUser()
+
+  if (!isLoaded) {
+    return (
+      <div className="h-[60px] rounded-2xl border border-hairline bg-receipt" />
+    )
+  }
+
+  if (!isSignedIn) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-hairline bg-receipt px-4 py-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-spruce/10 text-spruce">
+          <UserRound className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-ink">Not signed in</p>
+          <p className="text-xs text-muted-ink">Sync bills across devices.</p>
+        </div>
+        <SignInButton mode="modal">
+          <button
+            type="button"
+            className="rounded-full bg-spruce px-4 py-2 text-sm font-semibold text-receipt"
+          >
+            Sign in
+          </button>
+        </SignInButton>
+      </div>
+    )
+  }
+
+  const name =
+    user?.firstName || user?.username || user?.primaryEmailAddress?.emailAddress || 'You'
+
+  return (
+    <div className="rounded-2xl border border-hairline bg-receipt px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-tangerine/15 text-tangerine">
+          <UserRound className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-ink">{name}</p>
+          <p className="text-xs text-muted-ink">Signed in</p>
+        </div>
+        <SignOutButton>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-muted-ink transition-colors hover:bg-leader/30 hover:text-ink"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sign out
+          </button>
+        </SignOutButton>
+      </div>
+
+      <div className="mt-2 flex flex-col">
+        <Link
+          href="/profile"
+          className="flex items-center justify-between rounded-lg px-1 py-2 text-sm text-ink hover:bg-leader/20"
+        >
+          Edit profile &amp; payment handle
+          <ChevronRight className="h-4 w-4 text-muted-ink" />
+        </Link>
+        <Link
+          href="/history"
+          className="flex items-center justify-between rounded-lg px-1 py-2 text-sm text-ink hover:bg-leader/20"
+        >
+          Saved history (all devices)
+          <ChevronRight className="h-4 w-4 text-muted-ink" />
+        </Link>
       </div>
     </div>
   )

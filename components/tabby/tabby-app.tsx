@@ -1,17 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Camera, ReceiptText, HandCoins, History } from 'lucide-react'
+import { Camera, ReceiptText, HandCoins, CircleUser } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatMoney } from '@/lib/tabby-data'
 import { useSession } from '@/lib/hooks/use-session'
 import {
-  loadActiveSession,
   saveActiveSession,
   clearActiveSession,
   addBill,
 } from '@/lib/session-store'
-import { AuthButton } from '@/components/auth/auth-button'
 import { AccountLinker } from '@/components/auth/account-linker'
 import { Wordmark } from './wordmark'
 import { LandingScreen } from './landing-screen'
@@ -19,7 +17,7 @@ import { CaptureScreen } from './capture-screen'
 import { ClaimScreen } from './claim-screen'
 import { SettleScreen } from './settle-screen'
 import { ShareSheet } from './share-sheet'
-import { BillsSheet } from './bills-sheet'
+import { ProfileSheet } from './profile-sheet'
 
 type Screen = 'landing' | 'capture' | 'claim' | 'settle'
 
@@ -41,22 +39,16 @@ export function TabbyApp({
 }) {
   const [screen, setScreen] = useState<Screen>(initialScreen)
   const [shareOpen, setShareOpen] = useState(false)
-  const [billsOpen, setBillsOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId)
   const [meId, setMeId] = useState<string | null>(initialMeId)
 
-  // Resolve the active session. An explicit deep-link (?s=&m=, e.g. from the
-  // history list) wins and is persisted; otherwise pick up a session created or
-  // joined elsewhere (a guest routed here from /s/[id]/join). Falls back to mock.
+  // A bill is active ONLY via an explicit deep-link (?s=&m= — from a join link
+  // or the Profile history). A plain refresh does NOT auto-resume the last bill;
+  // it starts fresh, and past bills remain in the Profile → Your bills history.
   useEffect(() => {
     if (initialSessionId && initialMeId) {
       saveActiveSession({ sessionId: initialSessionId, meId: initialMeId })
-      return
-    }
-    const active = loadActiveSession()
-    if (active) {
-      setSessionId(active.sessionId)
-      setMeId(active.meId)
     }
   }, [initialSessionId, initialMeId])
 
@@ -74,16 +66,16 @@ export function TabbyApp({
     clearActiveSession()
     setSessionId(null)
     setMeId(null)
-    setBillsOpen(false)
+    setProfileOpen(false)
     setScreen('capture')
   }
 
-  // Open a past bill from the Bills sheet.
+  // Open a past bill from the Profile → Your bills history.
   function openBill(id: string, memberId: string) {
     setSessionId(id)
     setMeId(memberId)
     saveActiveSession({ sessionId: id, meId: memberId })
-    setBillsOpen(false)
+    setProfileOpen(false)
     setScreen('claim')
   }
 
@@ -127,13 +119,12 @@ export function TabbyApp({
               )}
               <button
                 type="button"
-                onClick={() => setBillsOpen(true)}
-                aria-label="Your bills"
+                onClick={() => setProfileOpen(true)}
+                aria-label="Profile, history and sign in"
                 className="flex h-8 w-8 items-center justify-center rounded-full text-receipt/80 transition-colors hover:bg-receipt/10 hover:text-receipt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine"
               >
-                <History className="h-[18px] w-[18px]" />
+                <CircleUser className="h-[20px] w-[20px]" />
               </button>
-              <AuthButton />
             </div>
           </div>
         </header>
@@ -219,9 +210,9 @@ export function TabbyApp({
         }}
       />
 
-      <BillsSheet
-        open={billsOpen}
-        onClose={() => setBillsOpen(false)}
+      <ProfileSheet
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
         onOpenBill={openBill}
         onNewSplit={handleNewSplit}
       />
@@ -277,7 +268,8 @@ function ClaimFooter({ onSettle }: { onSettle: () => void }) {
  */
 function SettleFooter() {
   const [summary, setSummary] = useState({
-    outstanding: 0,
+    label: 'Still owed to you',
+    amount: 0,
     text: '',
     ready: false,
   })
@@ -286,7 +278,12 @@ function SettleFooter() {
   useEffect(() => {
     function handler(e: Event) {
       const detail = (
-        e as CustomEvent<{ outstanding: number; text: string; ready: boolean }>
+        e as CustomEvent<{
+          label: string
+          amount: number
+          text: string
+          ready: boolean
+        }>
       ).detail
       setSummary(detail)
     }
@@ -306,9 +303,9 @@ function SettleFooter() {
     <div className="shrink-0 px-4 pb-4 pt-2">
       <div className="flex items-center justify-between gap-4 rounded-2xl bg-ink/95 px-5 py-3 shadow-[0_-4px_20px_-6px_rgba(0,0,0,0.35)] backdrop-blur">
         <div className="flex flex-col">
-          <span className="text-xs text-receipt/60">Still owed to you</span>
+          <span className="text-xs text-receipt/60">{summary.label}</span>
           <span className="font-mono text-xl font-semibold tabular-nums text-receipt">
-            {formatMoney(summary.outstanding)}
+            {formatMoney(summary.amount)}
           </span>
         </div>
         <button
