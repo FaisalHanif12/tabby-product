@@ -1,6 +1,7 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Bricolage_Grotesque } from 'next/font/google'
+import { OptionalClerkProvider } from '@/components/auth/optional-clerk-provider'
 import './globals.css'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
@@ -54,7 +55,7 @@ export default function RootLayout({
       className={`light ${geistSans.variable} ${geistMono.variable} ${bricolage.variable} bg-canvas`}
     >
       <body className="font-sans antialiased">
-        {children}
+        <OptionalClerkProvider>{children}</OptionalClerkProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

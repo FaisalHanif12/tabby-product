@@ -2,11 +2,24 @@
 
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { joinSession } from '@/lib/api/tabby-client'
+import { saveActiveSession } from '@/lib/session-store'
 import { Wordmark } from './wordmark'
 import { JoinScreen } from './join-screen'
 
-export function JoinFlow() {
+export function JoinFlow({ sessionId }: { sessionId: string }) {
   const router = useRouter()
+
+  // Join with the entered name against the real session id from the URL, pin
+  // this browser's member id, then route into the claim screen. On failure we
+  // still navigate (mock fallback) so the invite never dead-ends.
+  async function handleJoin(name: string) {
+    const res = await joinSession(sessionId, name)
+    if (res.ok) {
+      saveActiveSession({ sessionId, meId: res.data.member.id })
+    }
+    router.push('/?screen=claim')
+  }
 
   return (
     <main
@@ -23,7 +36,7 @@ export function JoinFlow() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto motion-safe:animate-rise">
-        <JoinScreen onJoin={() => router.push('/?screen=claim')} />
+        <JoinScreen onJoin={handleJoin} />
       </div>
     </main>
   )

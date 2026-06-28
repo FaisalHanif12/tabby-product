@@ -81,5 +81,36 @@ export const ParseReceiptSchema = z.object({
   objectKey: z.string().trim().min(1).max(512),
 })
 
+/* ── Optional auth: profile + account linking ──────────────────────────── */
+
+export const PaymentHandleSchema = z.object({
+  provider: z.enum(['venmo', 'cashapp', 'paypal']),
+  username: z.string().trim().min(1).max(64),
+})
+
+export const UpdateProfileSchema = z.object({
+  displayName: z.string().trim().min(1).max(40).nullable().optional(),
+  // Pass null to clear a saved handle.
+  paymentHandle: PaymentHandleSchema.nullable().optional(),
+})
+
+/**
+ * Body for POST /api/auth/link. `links` is optional: the route ALSO discovers
+ * the browser's guest sessions from its `tabby_member_*` cookies, so a bare
+ * `{}` still links everything this browser participated in.
+ */
+export const LinkAccountSchema = z.object({
+  links: z
+    .array(
+      z.object({
+        sessionId: z.string().trim().min(1).max(64),
+        memberId: z.string().trim().min(1).max(64),
+      }),
+    )
+    .max(50)
+    .optional(),
+})
+
 export type CreateSessionInput = z.infer<typeof CreateSessionSchema>
 export type CreateExpenseInput = z.infer<typeof CreateExpenseSchema>
+export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>

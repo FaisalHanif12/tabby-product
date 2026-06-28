@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -9,10 +9,58 @@ import {
   formatMoney,
   type SettleRow,
 } from '@/lib/tabby-data'
+import type { PaymentHandle, SessionView } from '@/lib/types/tabby'
+import { getSettlement, settleSession } from '@/lib/api/tabby-client'
+import { paymentLink, payButtonLabel } from '@/lib/domain/payment-links'
+import { SaveSplitPrompt } from '@/components/auth/save-split-prompt'
 
-export function SettleScreen({ onNewSplit }: { onNewSplit: () => void }) {
-  const [rows, setRows] = useState<SettleRow[]>(INITIAL_SETTLE)
+export function SettleScreen({
+  sessionId = null,
+  view = null,
+  onNewSplit,
+}: {
+  sessionId?: string | null
+  view?: SessionView | null
+  onNewSplit: () => void
+}) {
+  const live = Boolean(sessionId)
+  const [rows, setRows] = useState<SettleRow[]>(live ? [] : INITIAL_SETTLE)
   const [copied, setCopied] = useState(false)
+  // The payer's saved payment handle (when they're a signed-in user). Prefills
+  // every "Pay" deep link; null falls back to the plain button.
+  const [payerHandle, setPayerHandle] = useState<PaymentHandle | null>(null)
+
+  const merchantName =
+    live && view?.expense?.merchant ? view.expense.merchant : MERCHANT.name
+
+  // Live settlement: finalise the split (host-only; guests get 403 and just
+  // read), then load the real per-member "who owes the payer" amounts.
+  useEffect(() => {
+    if (!live || !sessionId) return
+    let cancelled = false
+    void (async () => {
+      await settleSession(sessionId)
+      const res = await getSettlement(sessionId)
+      if (cancelled || !res.ok || !res.data.settle) return
+      setPayerHandle(res.data.payerHandle ?? null)
+      const byId = Object.fromEntries(res.data.members.map((m) => [m.id, m]))
+      setRows(
+        res.data.settle.rows.map((r) => ({
+          member: {
+            id: r.memberId,
+            name: byId[r.memberId]?.name ?? 'Someone',
+            initials: byId[r.memberId]?.initials ?? '??',
+            color: byId[r.memberId]?.color ?? 'var(--color-tangerine)',
+          },
+          amount: r.amount,
+          paid: false,
+        })),
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [live, sessionId])
 
   const outstanding = rows
     .filter((r) => !r.paid)
@@ -35,7 +83,7 @@ export function SettleScreen({ onNewSplit }: { onNewSplit: () => void }) {
           r.paid ? ' (paid)' : ''
         }`,
     )
-    const text = `Tabby · ${MERCHANT.name}\n${lines.join('\n')}`
+    const text = `Tabby · ${merchantName}\n${lines.join('\n')}`
     navigator.clipboard?.writeText(text).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
@@ -56,9 +104,12 @@ export function SettleScreen({ onNewSplit }: { onNewSplit: () => void }) {
         </h1>
         <p className="mt-2 text-pretty text-base leading-relaxed text-muted-ink">
           Everyone&apos;s paid up for{' '}
-          <span className="font-semibold text-ink">{MERCHANT.name}</span>.
+          <span className="font-semibold text-ink">{merchantName}</span>.
           Nice work.
         </p>
+
+        {/* Low-pressure nudge for signed-out users to save this split. */}
+        <SaveSplitPrompt />
 
         <button
           type="button"
@@ -77,7 +128,7 @@ export function SettleScreen({ onNewSplit }: { onNewSplit: () => void }) {
         Settle up
       </h1>
       <p className="mt-1 text-sm text-muted-ink">
-        You covered {MERCHANT.name}. Here&apos;s who owes you.
+        You covered {merchantName}. Here&apos;s who owes you.
       </p>
 
       <div className="mt-5 rounded-2xl bg-spruce px-5 py-4 shadow-[0_16px_40px_-22px_rgba(11,83,65,0.55)]">
@@ -117,12 +168,33 @@ export function SettleScreen({ onNewSplit }: { onNewSplit: () => void }) {
               </span>
             ) : (
               <div className="flex flex-col items-end gap-1.5">
-                <button
-                  type="button"
-                  className="rounded-full bg-tangerine px-4 py-2 text-sm font-semibold text-ink transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-receipt"
-                >
-                  Pay with Venmo
-                </button>
+                {(() => {
+                  const href = payerHandle
+                    ? paymentLink(
+                        payerHandle,
+                        row.amount,
+                        `Tabby - ${merchantName}`,
+                      )
+                    : null
+                  const className =
+                    'rounded-full bg-tangerine px-4 py-2 text-sm font-semibold text-ink transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tangerine focus-visible:ring-offset-2 focus-visible:ring-offset-receipt'
+                  // Prefilled deep link when the payer saved a handle; otherwise
+                  // the original plain button (anonymous-friendly fallback).
+                  return href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={className}
+                    >
+                      {payButtonLabel(payerHandle!.provider)}
+                    </a>
+                  ) : (
+                    <button type="button" className={className}>
+                      Pay with Venmo
+                    </button>
+                  )
+                })()}
                 <button
                   type="button"
                   onClick={() => markPaid(row.member.id)}

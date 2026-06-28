@@ -11,6 +11,7 @@ import { cookies } from 'next/headers'
 
 const hostCookie = (sessionId: string) => `tabby_host_${sessionId}`
 const memberCookie = (sessionId: string) => `tabby_member_${sessionId}`
+const MEMBER_COOKIE_PREFIX = 'tabby_member_'
 
 const baseOptions = {
   httpOnly: true,
@@ -40,4 +41,23 @@ export async function getMemberCookie(
 ): Promise<string | null> {
   const store = await cookies()
   return store.get(memberCookie(sessionId))?.value ?? null
+}
+
+/**
+ * Every split this browser has created or joined, derived from its
+ * `tabby_member_<sessionId>` cookies. This IS the "recent splits" ledger used at
+ * sign-in to link the guest's history to their new account — no server-side list
+ * of a guest's sessions exists otherwise.
+ */
+export async function listGuestMemberships(): Promise<
+  { sessionId: string; memberId: string }[]
+> {
+  const store = await cookies()
+  return store
+    .getAll()
+    .filter((c) => c.name.startsWith(MEMBER_COOKIE_PREFIX) && c.value)
+    .map((c) => ({
+      sessionId: c.name.slice(MEMBER_COOKIE_PREFIX.length),
+      memberId: c.value,
+    }))
 }
