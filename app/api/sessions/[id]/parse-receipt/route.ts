@@ -1,10 +1,18 @@
-import { ok, fail, parseBody, serverError } from '@/lib/api/respond'
+import {
+  ok,
+  fail,
+  parseBody,
+  serverError,
+  tooManyRequests,
+  getClientIp,
+} from '@/lib/api/respond'
 import { ParseReceiptSchema } from '@/lib/validation/schemas'
 import type { Receipt } from '@/lib/validation/schemas'
 import { getObjectBytes } from '@/lib/aws/s3'
 import { isSessionHost } from '@/lib/auth/guards'
 import { extractReceiptJson } from '@/lib/domain/receipt-parse'
 import { normalizeReceipt } from '@/lib/domain/receipt-normalize'
+import { checkRateLimit } from '@/lib/db/rate-limit'
 
 export const runtime = 'nodejs'
 // Vision OCR can take a few seconds on large receipts.
@@ -12,6 +20,23 @@ export const maxDuration = 60
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const PER_CALL_TIMEOUT_MS = 30_000
+
+/**
+ * Every call here is a paid Gemini/OpenRouter request, so it's rate-limited
+ * two ways: per session (a fussy receipt gets a few retries, not unlimited
+ * ones) and per IP (caps one client hammering the endpoint across many
+ * sessions, since sessions themselves are free to create). Either limit alone
+ * would leave a gap; together they bound worst-case spend. Env-overridable so
+ * limits can be tuned in production without a code change.
+ */
+const SESSION_LIMIT = Number(process.env.OCR_RATE_LIMIT_SESSION_MAX ?? 8)
+const SESSION_WINDOW_SECONDS = Number(
+  process.env.OCR_RATE_LIMIT_SESSION_WINDOW_SECONDS ?? 600, // 10 minutes
+)
+const IP_LIMIT = Number(process.env.OCR_RATE_LIMIT_IP_MAX ?? 20)
+const IP_WINDOW_SECONDS = Number(
+  process.env.OCR_RATE_LIMIT_IP_WINDOW_SECONDS ?? 3600, // 1 hour
+)
 
 /**
  * Universal, language- and category-agnostic instructions plus an explicit JSON
@@ -131,6 +156,32 @@ export async function POST(
   }
   if (!data.objectKey.startsWith(`receipts/${id}/`)) {
     return fail('Object does not belong to this session', 403)
+  }
+
+  const sessionLimit = await checkRateLimit({
+    scope: 'ocr-session',
+    identifier: id,
+    limit: SESSION_LIMIT,
+    windowSeconds: SESSION_WINDOW_SECONDS,
+  })
+  if (!sessionLimit.allowed) {
+    return tooManyRequests(
+      'Too many receipt scans for this split. Please wait a moment and try again.',
+      sessionLimit.retryAfterSeconds,
+    )
+  }
+
+  const ipLimit = await checkRateLimit({
+    scope: 'ocr-ip',
+    identifier: getClientIp(req),
+    limit: IP_LIMIT,
+    windowSeconds: IP_WINDOW_SECONDS,
+  })
+  if (!ipLimit.allowed) {
+    return tooManyRequests(
+      'Too many receipt scans from this device. Please wait a moment and try again.',
+      ipLimit.retryAfterSeconds,
+    )
   }
 
   let bytes: Uint8Array
