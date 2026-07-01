@@ -44,3 +44,25 @@ export function serverError(scope: string, err: unknown) {
   console.log(`[v0] ${scope} error:`, err instanceof Error ? err.message : err)
   return fail('Something went wrong. Please try again.', 500)
 }
+
+/** 429 with a `Retry-After` header so a well-behaved client knows when to retry. */
+export function tooManyRequests(message: string, retryAfterSeconds: number) {
+  return NextResponse.json(
+    { error: message },
+    {
+      status: 429,
+      headers: { 'Retry-After': String(Math.max(1, Math.round(retryAfterSeconds))) },
+    },
+  )
+}
+
+/**
+ * Best-effort client IP from the headers Vercel/most proxies set. Falls back to
+ * 'unknown' (all unidentifiable clients then share one bucket) rather than
+ * throwing — IP is a defense-in-depth signal here, not a security boundary.
+ */
+export function getClientIp(req: Request): string {
+  const forwarded = req.headers.get('x-forwarded-for')
+  if (forwarded) return forwarded.split(',')[0].trim()
+  return req.headers.get('x-real-ip')?.trim() || 'unknown'
+}
